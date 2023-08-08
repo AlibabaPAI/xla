@@ -239,7 +239,14 @@ class BuildBazelExtension(build_ext.build_ext):
     ext_dest_dir = os.path.dirname(ext_dest_path)
     if not os.path.exists(ext_dest_dir):
       os.makedirs(ext_dest_dir)
+    os.system(f"patchelf --add-rpath '$ORIGIN/' {ext_bazel_bin_path}")
     shutil.copyfile(ext_bazel_bin_path, ext_dest_path)
+
+    # copy flash attention cuda so file
+    flash_attn_so_name = 'flash_attn_cuda.so'
+    shutil.copyfile(
+        '/'.join(['third_party/flash-attention', flash_attn_so_name]),
+        '/'.join([ext_dest_dir, flash_attn_so_name]))
 
 
 class Develop(develop.develop):

@@ -2,6 +2,7 @@
 #define XLA_TORCH_XLA_CSRC_TENSOR_METHODS_H_
 
 #include "torch_xla/csrc/cross_replica_reduces.h"
+#include "torch_xla/csrc/flash_attention_utils.h"
 #include "torch_xla/csrc/runtime/computation_client.h"
 #include "torch_xla/csrc/tensor.h"
 
@@ -109,6 +110,18 @@ void adam_optimizer_step_(const XLATensorPtr& found_inf, XLATensorPtr& step,
                           double beta2, double lr, double weight_decay,
                           double eps, bool amsgrad, bool maximize,
                           bool use_adamw);
+
+std::vector<XLATensorPtr> flash_attention_forward(
+    const XLATensorPtr& q, const XLATensorPtr& k, const XLATensorPtr& v,
+    const XLATensorPtr& cu_seqlens_q, const XLATensorPtr& cu_seqlens_k,
+    const FlashAttentionForwardParams& params);
+
+std::vector<XLATensorPtr> flash_attention_backward(
+    const XLATensorPtr& dout, const XLATensorPtr& q, const XLATensorPtr& k,
+    const XLATensorPtr& v, const XLATensorPtr& out,
+    const XLATensorPtr& softmax_lse, const XLATensorPtr& cu_seqlens_q,
+    const XLATensorPtr& cu_seqlens_k,
+    const FlashAttentionBackwardParams& params);
 
 std::vector<XLATensorPtr> user_computation(
     const std::string& opname, absl::Span<const XLATensorPtr> inputs,

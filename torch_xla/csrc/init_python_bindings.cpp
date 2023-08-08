@@ -35,6 +35,7 @@
 #include "torch_xla/csrc/aten_xla_bridge.h"
 #include "torch_xla/csrc/device.h"
 #include "torch_xla/csrc/dtype.h"
+#include "torch_xla/csrc/flash_attention_utils.h"
 #include "torch_xla/csrc/helpers.h"
 #include "torch_xla/csrc/ir.h"
 #include "torch_xla/csrc/ir_dump_util.h"
@@ -2336,6 +2337,75 @@ void InitXlaModuleBindings(py::module m) {
     }
     return false;
   });
+
+  // -------------FlashAttention Integration API Start-----------------
+  m.def("_flash_attention_forward",
+        [](const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
+           const at::Tensor& cu_seqlens_q, const at::Tensor& cu_seqlens_k,
+           const int max_seqlen_q, const int max_seqlen_k,
+           const float p_dropout, const float softmax_scale,
+           const bool zero_tensors, const bool is_causal,
+           const bool return_softmax, c10::optional<at::Generator> gen_) {
+          // get launch params on at::Tensor
+          auto params = get_flash_attention_forward_params(
+              q, k, v, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, max_seqlen_k,
+              p_dropout, softmax_scale, zero_tensors, is_causal,
+              return_softmax);
+          // call flash attention forward
+          XLATensorPtr q_xla = bridge::GetXlaTensor(q);
+          XLATensorPtr k_xla = bridge::GetXlaTensor(k);
+          XLATensorPtr v_xla = bridge::GetXlaTensor(v);
+          XLATensorPtr cu_seqlens_q_xla = bridge::GetXlaTensor(cu_seqlens_q);
+          XLATensorPtr cu_seqlens_k_xla = bridge::GetXlaTensor(cu_seqlens_k);
+
+          std::vector<XLATensorPtr> xresults =
+              tensor_methods::flash_attention_forward(q_xla, k_xla, v_xla,
+                                                      cu_seqlens_q_xla,
+                                                      cu_seqlens_k_xla, params);
+          std::vector<at::Tensor> results;
+          for (auto& xresult : xresults) {
+            at::Tensor tensor = bridge::AtenFromXlaTensor(std::move(xresult));
+            results.push_back(torch::autograd::make_variable(
+                tensor, /*requires_grad=*/false));
+          }
+          return results;
+        });
+  m.def("_flash_attention_backward",
+        [](const at::Tensor& dout, const at::Tensor& q, const at::Tensor& k,
+           const at::Tensor& v, const at::Tensor& out,
+           const at::Tensor& softmax_lse, const at::Tensor& cu_seqlens_q,
+           const at::Tensor& cu_seqlens_k, const int max_seqlen_q,
+           const int max_seqlen_k, const float p_dropout,
+           const float softmax_scale, const bool zero_tensors,
+           const bool is_causal, c10::optional<at::Generator> gen_) {
+          // get launch params on at::Tensor
+          auto params = get_flash_attention_backward_params(
+              dout, q, k, v, out, softmax_lse, cu_seqlens_q, cu_seqlens_k,
+              max_seqlen_q, max_seqlen_k, p_dropout, softmax_scale,
+              zero_tensors, is_causal);
+          // call flash attention backward
+          XLATensorPtr dout_xla = bridge::GetXlaTensor(dout);
+          XLATensorPtr q_xla = bridge::GetXlaTensor(q);
+          XLATensorPtr k_xla = bridge::GetXlaTensor(k);
+          XLATensorPtr v_xla = bridge::GetXlaTensor(v);
+          XLATensorPtr out_xla = bridge::GetXlaTensor(out);
+          XLATensorPtr softmax_lse_xla = bridge::GetXlaTensor(softmax_lse);
+          XLATensorPtr cu_seqlens_q_xla = bridge::GetXlaTensor(cu_seqlens_q);
+          XLATensorPtr cu_seqlens_k_xla = bridge::GetXlaTensor(cu_seqlens_k);
+
+          std::vector<XLATensorPtr> xresults =
+              tensor_methods::flash_attention_backward(
+                  dout_xla, q_xla, k_xla, v_xla, out_xla, softmax_lse_xla,
+                  cu_seqlens_q_xla, cu_seqlens_k_xla, params);
+          std::vector<at::Tensor> results;
+          for (auto& xresult : xresults) {
+            at::Tensor tensor = bridge::AtenFromXlaTensor(std::move(xresult));
+            results.push_back(torch::autograd::make_variable(
+                tensor, /*requires_grad=*/false));
+          }
+          return results;
+        });
+  // -------------FlashAttention Integration API End-------------------
 
   // -------------Dynamo Integration API Start-------------------------
   /*

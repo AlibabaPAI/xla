@@ -50,6 +50,8 @@
 #include "torch_xla/csrc/ops/expand.h"
 #include "torch_xla/csrc/ops/expand_symint.h"
 #include "torch_xla/csrc/ops/exponential.h"
+#include "torch_xla/csrc/ops/flash_attention_backward.h"
+#include "torch_xla/csrc/ops/flash_attention_forward.h"
 #include "torch_xla/csrc/ops/flip.h"
 #include "torch_xla/csrc/ops/gather.h"
 #include "torch_xla/csrc/ops/generic.h"
@@ -623,6 +625,29 @@ void adam_optimizer_step_(const XLATensorPtr& found_inf, XLATensorPtr& step,
   if (amsgrad) {
     max_exp_avg_sq->SetInPlaceIrValue(torch::lazy::Value(node, 4));
   }
+}
+
+std::vector<XLATensorPtr> flash_attention_forward(
+    const XLATensorPtr& q, const XLATensorPtr& k, const XLATensorPtr& v,
+    const XLATensorPtr& cu_seqlens_q, const XLATensorPtr& cu_seqlens_k,
+    const FlashAttentionForwardParams& params) {
+  torch::lazy::NodePtr node = torch::lazy::MakeNode<FlashAttentionForward>(
+      q->GetIrValue(), k->GetIrValue(), v->GetIrValue(),
+      cu_seqlens_q->GetIrValue(), cu_seqlens_k->GetIrValue(), params);
+  return q->MakeOutputTensors(node, /*inherit_logical_type=*/false);
+}
+
+std::vector<XLATensorPtr> flash_attention_backward(
+    const XLATensorPtr& dout, const XLATensorPtr& q, const XLATensorPtr& k,
+    const XLATensorPtr& v, const XLATensorPtr& out,
+    const XLATensorPtr& softmax_lse, const XLATensorPtr& cu_seqlens_q,
+    const XLATensorPtr& cu_seqlens_k,
+    const FlashAttentionBackwardParams& params) {
+  torch::lazy::NodePtr node = torch::lazy::MakeNode<FlashAttentionBackward>(
+      dout->GetIrValue(), q->GetIrValue(), k->GetIrValue(), v->GetIrValue(),
+      out->GetIrValue(), softmax_lse->GetIrValue(), cu_seqlens_q->GetIrValue(),
+      cu_seqlens_k->GetIrValue(), params);
+  return dout->MakeOutputTensors(node, /*inherit_logical_type=*/false);
 }
 
 std::vector<XLATensorPtr> user_computation(

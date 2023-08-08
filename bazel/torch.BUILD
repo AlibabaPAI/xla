@@ -13,6 +13,14 @@ cc_library(
     strip_include_prefix = "torch/include",
 )
 
+cc_library(
+    name = "cu_headers",
+    hdrs = glob(
+        ["torch/include/ATen/cuda/**/*.cuh"],
+    ),
+    strip_include_prefix = "torch/include",
+)
+
 # Runtime headers, for importing <torch/torch.h>.
 cc_library(
     name = "runtime_headers",

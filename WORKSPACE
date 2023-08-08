@@ -83,3 +83,9 @@ new_local_repository(
     build_file = "//bazel:torch.BUILD",
     path = PYTORCH_LOCAL_DIR,
 )
+
+new_local_repository(
+    name = "flash_attn",
+    build_file = "//bazel:flash_attn.BUILD",
+    path = "third_party/flash-attention/",
+)
