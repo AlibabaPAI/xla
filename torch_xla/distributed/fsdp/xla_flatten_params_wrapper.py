@@ -26,6 +26,7 @@ from typing import (
 import torch
 from torch import Tensor
 import torch.nn as nn
+import torch_xla
 
 # Static type.
 State = namedtuple(
@@ -401,17 +402,26 @@ class XlaFlattenParamsWrapper(nn.Module):
     """
     assert self.is_flattened
     ps = self.get_param_views()
-    param_views = []
+    # param_views = []
     for (_, m, n), p in zip(self._param_infos, ps):
       setattr(m, n, p)  # This will set as plain attr
-      param_views.append(p)
+      # param_views.append(p)
 
+    # (wenting.swt): We do not keep param views for reducing memory overhead;
+    # instead, param views are released with each layer of FSDP parameters.
+    """
     # Save param views for easy access if anyone still wants to access
     # parameters of the module.
     setattr(self._fpw_module, "_unflattened_param_views", param_views)
+    """
 
     for (_, _, m, n, shared_m, shared_n) in self._shared_param_infos:
       setattr(m, n, getattr(shared_m, shared_n))
+
+  def replace_unflatten_params_view(self, rhs) -> None:
+    for _, m, n in self._param_infos:
+      if hasattr(m, n):
+        torch_xla._XLAC._replace_xla_tensor(getattr(m, n), rhs)
 
   @contextmanager
   def unflatten_params(self,
