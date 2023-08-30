@@ -529,6 +529,9 @@ class XlaFullyShardedDataParallel(nn.Module):
     if execute_sharding_on_init:
       # Execute the parameter sharding immediately and free up the memory
       gc.collect()
+      # (wenting.swt): Print all the live tensors to debug along
+      #     with `XLA_IR_DEBUG=1 XLA_HLO_DEBUG=1.
+      # print(torch_xla._XLAC._xla_tensors_report(0, 'xla:0'))
       xm.mark_step()
 
   def _get_gradient_predivide_factor(self, world_size: int) -> float:

@@ -63,6 +63,12 @@ class FlatParameter(nn.Parameter):
     if any(isinstance(p, FlatParameter) for p in params):
       raise ValueError("Nesting FlatParameter is not supported")
 
+    if len(params) == 1 and params[0].dim() == 1:
+      ret = super(FlatParameter, cls).__new__(
+        cls, params[0], requires_grad=requires_grad)
+      torch_xla._XLAC._replace_xla_tensor(params[0], params[0].new_zeros(1))
+      return ret
+
     data = torch.cat([
         p.detach().reshape(-1) if isinstance(p, nn.Parameter) else p.reshape(-1)
         for p in params
