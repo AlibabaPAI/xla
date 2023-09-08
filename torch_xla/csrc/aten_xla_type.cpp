@@ -34,6 +34,7 @@
 #include "torch_xla/csrc/ops/unselect.h"
 #include "torch_xla/csrc/ops/update_slice.h"
 #include "torch_xla/csrc/ops/view.h"
+#include "torch_xla/csrc/ops/xla_ops.h"
 #include "torch_xla/csrc/pooling.h"
 #include "torch_xla/csrc/runtime/debug_macros.h"
 #include "torch_xla/csrc/runtime/metrics.h"
@@ -2388,7 +2389,11 @@ void XLANativeFunctions::_propagate_xla_data(const at::Tensor& input,
   // 1) Aid XLA's InputOutputAlias.
   auto input_tensor = bridge::GetXlaTensor(input);
   auto output_tensor = bridge::GetXlaTensor(output);
-  output_tensor->data()->alias_id = input_tensor->GetUniqueId();
+  if (input_tensor->CurrentIrValue()->op() == xla_device_data) {
+    output_tensor->data()->alias_id = input_tensor->GetUniqueId();
+  } else {
+    output_tensor->data()->alias_id = input_tensor->data()->alias_id;
+  }
 
   // 2) Aid SPMD.
   XLATensor::ShardingSpecPtr sharding = input_tensor->sharding_spec();
