@@ -27,6 +27,7 @@ import torch
 from torch import Tensor
 import torch.nn as nn
 import torch_xla
+import torch_xla.core.xla_model as xm
 
 # Static type.
 State = namedtuple(
@@ -370,7 +371,8 @@ class XlaFlattenParamsWrapper(nn.Module):
       delattr(m, n)
 
     # register the views as plain attributes
-    self._unflatten_params_as_views()
+    if flat_params[0].data.device == xm.xla_device:
+      self._unflatten_params_as_views()
 
   def _unflatten_params(self,
                         external_data: Optional[List[Optional[Tensor]]] = None

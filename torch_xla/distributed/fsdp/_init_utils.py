@@ -1,4 +1,5 @@
 import collections
+import os
 import warnings
 from typing import (
     Any,
@@ -22,7 +23,7 @@ import torch_xla.core.xla_model as xm
 
 from .xla_flatten_params_wrapper import FlatParameter
 
-_TORCHDISTX_AVAIL = True
+_TORCHDISTX_AVAIL = bool(os.environ.get('LOW_CPU_MEM_USAGE', False))
 try:
   from torchdistx import deferred_init, fake  # type: ignore[import]
 except ImportError:

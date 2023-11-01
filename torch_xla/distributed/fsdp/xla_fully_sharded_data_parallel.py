@@ -459,7 +459,7 @@ class XlaFullyShardedDataParallel(nn.Module):
         module,
         param_init_fn,
         [],  # TODO: ignored_params is set to empty now, pass in correct params when this feature is fully enabled
-        deferred_init_check_fn=lambda k: not isinstance(k, wrapper_cls))
+        deferred_init_check_fn=lambda k: not isinstance(k, XlaFullyShardedDataParallel))
 
     # Only handle params which are not already sharded. This enables
     # sharding individual layers of a Module, with an outer wrapper to
