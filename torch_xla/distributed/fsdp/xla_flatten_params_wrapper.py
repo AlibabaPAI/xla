@@ -371,7 +371,7 @@ class XlaFlattenParamsWrapper(nn.Module):
       delattr(m, n)
 
     # register the views as plain attributes
-    if flat_params[0].data.device == xm.xla_device:
+    if len(flat_params) > 0 and flat_params[0].data.device == xm.xla_device:
       self._unflatten_params_as_views()
 
   def _unflatten_params(self,
@@ -412,7 +412,10 @@ class XlaFlattenParamsWrapper(nn.Module):
     ps = self.get_param_views()
     # param_views = []
     for (_, m, n), p in zip(self._param_infos, ps):
-      setattr(m, n, p)  # This will set as plain attr
+      if hasattr(m, n):
+        torch_xla._XLAC._replace_xla_tensor(getattr(m, n), p)
+      else:
+        setattr(m, n, p)  # This will set as plain attr
       # param_views.append(p)
 
     # (wenting.swt): We do not keep param views for reducing memory overhead;
@@ -424,7 +427,10 @@ class XlaFlattenParamsWrapper(nn.Module):
     """
 
     for (_, _, m, n, shared_m, shared_n) in self._shared_param_infos:
-      setattr(m, n, getattr(shared_m, shared_n))
+      if hasattr(m, n):
+        torch_xla._XLAC._replace_xla_tensor(getattr(m, n), getattr(shared_m, shared_n))
+      else:
+        setattr(m, n, getattr(shared_m, shared_n))
 
   def replace_unflatten_params_view(self, rhs) -> None:
     for _, m, n in self._param_infos:

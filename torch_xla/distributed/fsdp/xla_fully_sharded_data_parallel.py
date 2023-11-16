@@ -1499,7 +1499,7 @@ class XlaFullyShardedDataParallel(nn.Module):
           else:
             torch_xla._XLAC._replace_xla_tensor(p, self._dummy_data_placeholder)
         p._has_full_param = False
-    if self.flatten_parameters:
+    if self.flatten_parameters and len(self.full_params) > 0:
       # free the unflatten views of full parameters
       self.module.replace_unflatten_params_view(self._dummy_data_placeholder)
 
