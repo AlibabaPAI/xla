@@ -10,6 +10,7 @@ load(
 
 load(
     "//bazel:rules_def.bzl",
+    "ptxla_cc_library",
     "ptxla_cc_test",
 )
 
@@ -30,6 +31,7 @@ cc_library(
     ":env_vars",
     ":pjrt_computation_client",
     ":ifrt_computation_client",
+    ":disc_computation_client",
     "@tsl//tsl/platform:stacktrace",
   ],
 )
@@ -134,6 +136,22 @@ cc_library(
     "@com_google_absl//absl/strings",
     "@com_google_absl//absl/synchronization",
     "@com_google_absl//absl/types:span",
+  ],
+)
+
+cc_library(
+  name = "disc_computation_client",
+  srcs = [
+    "disc_computation_client.cc",
+  ],
+  hdrs = [
+    "disc_computation_client.h",
+  ],
+  deps = [
+    ":computation_client",
+    "@xla//xla:literal",
+    "@xla//xla:shape_util",
+    "@xla//xla/client:xla_computation"
   ],
 )
 
@@ -502,6 +520,28 @@ ptxla_cc_test(
         "@tsl//tsl/platform:env",
         "@tsl//tsl/platform:errors",
         "@tsl//tsl/platform:logging",
+        "@tsl//tsl/platform:test",
+        "@tsl//tsl/platform:test_main",
+    ],
+)
+
+ptxla_cc_test(
+    name = "disc_computation_client_test",
+    srcs = ["disc_computation_client_test.cc"],
+    deps = [
+        ":disc_computation_client",
+        "@xla//xla:literal",
+        "@xla//xla:literal_util",
+        "@xla//xla:shape_util",
+        "@xla//xla:status",
+        "@xla//xla:statusor",
+        "@xla//xla/client:xla_builder",
+        "@xla//xla/client:xla_computation",
+        "@xla//xla/tests:literal_test_util",
+        "@xla//xla/tools:hlo_module_loader",
+        "@stablehlo//:register",
+        "@tsl//tsl/lib/core:status_test_util",
+        "@tsl//tsl/platform:env",
         "@tsl//tsl/platform:test",
         "@tsl//tsl/platform:test_main",
     ],
