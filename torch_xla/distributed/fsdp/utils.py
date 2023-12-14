@@ -95,6 +95,7 @@ class XLAPatchedLinear(torch.autograd.Function):
   def backward(ctx, grad_output):
     input, weight, bias = ctx.saved_tensors
     grad_input = grad_weight = grad_bias = None
+    input = input.to(grad_output)
 
     input_dim = input.dim()
     if input_dim > 2:
