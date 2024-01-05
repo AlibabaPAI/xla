@@ -1,6 +1,7 @@
 load(
     "//bazel:rules_def.bzl",
     "ptxla_cc_library",
+    "ptxla_cc_test",
 )
 
 genrule(

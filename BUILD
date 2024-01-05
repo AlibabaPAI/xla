@@ -21,6 +21,7 @@ cc_binary(
     visibility = ["//visibility:public"],
     deps = [
         "//torch_xla/csrc:init_python_bindings",
+        "//torch_xla/csrc/runtime/disc:disc_ral",
         "@torch//:headers",
         "@torch//:libc10",
         "@torch//:libtorch",
