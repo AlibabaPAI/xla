@@ -1,6 +1,7 @@
 #include "torch_xla/csrc/runtime/disc_computation_client.h"
 
 #include <gtest/gtest.h>
+#include <torch/torch.h>
 
 #include <iostream>
 #include <memory>
@@ -32,54 +33,42 @@ tsl::StatusOr<xla::XlaComputation> MakeComputation() {
   return builder.Build();
 }
 
-ComputationClient::TensorSource TensorSourceFromLiteral(
-    const std::string& device, const xla::Literal& literal) {
-  auto populate_fn = [&](const ComputationClient::TensorSource& source_tensor,
-                         void* dest_buffer, size_t dest_buffer_size) {
-    std::memcpy(dest_buffer, literal.data<float>().data(),
-                dest_buffer_size * sizeof(literal.data<float>().data()));
-  };
-  return ComputationClient::TensorSource(literal.shape(), device,
-                                         std::move(populate_fn));
-}
-
 TEST(DISCComputationClientTest, Init) {
   tsl::setenv("DISC_DEVICE", "GPU", true);
   auto client = std::make_unique<DISCComputationClient>();
-  std::string device = "cuda:0";
+  std::string device = "GPU:0";
 
-  // // Compose a computation.
+  // Compose a computation.
   auto shape = xla::ShapeUtil::MakeShape(xla::F32, {2, 2});
   std::vector<ComputationClient::CompileInstance> instances;
   instances.push_back(ComputationClient::CompileInstance(
-      std::move(MakeComputation().value()), device, {"cuda:0"},
-      &shape));
+      std::move(MakeComputation().value()), device, {"cuda:0"}, &shape));
 
-  // // Prepare inputs.
+  // Prepare inputs.
   xla::Literal literal_x =
       xla::LiteralUtil::CreateR2<float>({{1.0f, 2.0f}, {3.0f, 4.0f}});
   xla::Literal literal_y =
       xla::LiteralUtil::CreateR2<float>({{5.0f, 6.0f}, {7.0f, 8.0f}});
 
-  // // Compile the graph.
+  // Compile the graph.
   std::vector<ComputationClient::ComputationPtr> computations =
       client->Compile(std::move(instances));
 
-  // // Copy inputs to device.
+  // Copy inputs to device.
   ComputationClient::ExecuteComputationOptions options{};
-  std::vector<ComputationClient::TensorSource> args = {
-      TensorSourceFromLiteral(device, literal_x),
-      TensorSourceFromLiteral(device, literal_y)};
+  std::vector<std::shared_ptr<const TensorSource>> args = {
+      std::make_shared<LiteralSource>(std::move(literal_x), device),
+      std::make_shared<LiteralSource>(std::move(literal_y), device)};
 
-  // // Execute the graph.
-  auto inputs = client->TransferToServer(absl::MakeConstSpan(args));
-
+  // Execute the graph.
   std::vector<ComputationClient::DataPtr> results = client->ExecuteComputation(
-      *computations[0], inputs,
+      *computations[0], client->TransferToDevice(absl::MakeConstSpan(args)),
       device, options);
 
-  // // Copy the output from device back to host and assert correctness..
-  auto result_literals = client->TransferFromServer(results);
+  // Copy the output from device back to host and assert correctness..
+  ASSERT_EQ(results.size(), 1);
+  auto result_literals = client->TransferFromDevice(results);
+  ASSERT_THAT(result_literals, ::testing::SizeIs(1));
   EXPECT_TRUE(xla::LiteralTestUtil::Equal(
       xla::LiteralUtil::CreateR2<float>({{6.0f, 8.0f}, {10.0f, 12.0f}}),
       result_literals[0]));

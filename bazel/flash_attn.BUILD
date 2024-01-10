@@ -23,9 +23,8 @@ genrule(
     name = "build_flash_attn",
     srcs = ["setup.py"],
     outs = ["flash_attn_cuda.so"],
-    cmd = ';'.join(['pushd third_party/flash-attention/',
-                    'MAX_JOBS=50 FLASH_ATTENTION_FORCE_BUILD=TRUE python setup.py bdist_wheel 2>&1 | tee build.log',
-                    'cp build/*/*.so flash_attn_cuda.so',
+    cmd = ';'.join(['pushd external/flash_attn/',
+                    'FLASH_ATTENTION_FORCE_BUILD=TRUE python setup.py bdist_wheel',
                     'popd',
-                    'cp third_party/flash-attention/flash_attn_cuda.so $(OUTS)']),
+                    'cp external/flash_attn/build/*/*.so $(location flash_attn_cuda.so)']),
 )

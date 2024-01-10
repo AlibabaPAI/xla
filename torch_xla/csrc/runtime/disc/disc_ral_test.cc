@@ -4,7 +4,7 @@
 
 namespace torch_xla {
 namespace runtime {
-
+namespace disc {
 TEST(DISCRAlTest, E2E) {
   // TODO(disc): need compile API to output the compilation result
   std::shared_ptr<DISCComplationResult> disc_result =
@@ -14,5 +14,6 @@ TEST(DISCRAlTest, E2E) {
   ral_ctx.Execute(at::List<at::Tensor>());
 }
 
+}  // namespace disc
 }  // namespace runtime
 }  // namespace torch_xla

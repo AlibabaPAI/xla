@@ -149,9 +149,14 @@ cc_library(
   ],
   deps = [
     ":computation_client",
+    ":stablehlo_helper",
+    "@tsl//tsl/platform:errors",
+    "@tsl//tsl/platform:logging",
     "@xla//xla:literal",
     "@xla//xla:shape_util",
-    "@xla//xla/client:xla_computation"
+    "@xla//xla/client:xla_computation",
+    "//torch_xla/csrc/runtime/disc:disc_ral",
+    "//torch_xla/csrc/runtime/disc:disc_compile",
   ],
 )
 

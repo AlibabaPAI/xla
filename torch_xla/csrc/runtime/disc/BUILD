@@ -17,12 +17,43 @@ ptxla_cc_library(
         "disc_ral.h",
     ],
     deps = [
+        ":disc_utils",
         "@disc_compiler//:disc_ral_cuda",
         "@disc_compiler//:headers",
         "@local_config_cuda//cuda:cuda_headers",
         "@torch//:libc10",
         "@torch//:libc10_cuda",
         "@torch//:libtorch_cuda",
+    ],
+    copts = [
+        "-DGOOGLE_CUDA",
+    ]
+)
+
+ptxla_cc_library(
+    name = "disc_utils",
+    srcs = ["disc_utils.cc"],
+    hdrs = [
+        "disc_utils.h",
+    ],
+    deps = [
+        "//torch_xla/csrc/runtime:tf_logging",
+    ]
+)
+
+ptxla_cc_library(
+    name = "disc_compile",
+    srcs = ["disc_compile.cc"],
+    hdrs = [
+        "disc_compile.h",
+    ],
+    deps = [
+        ":disc_ral",
+        ":disc_utils",
+        "//torch_xla/csrc/runtime:tf_logging",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Parser",
     ],
     copts = [
         "-DGOOGLE_CUDA",

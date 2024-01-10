@@ -2,17 +2,17 @@
 #define XLA_CLIENT_DISC_COMPUTATION_CLIENT_H_
 
 #include "torch_xla/csrc/runtime/computation_client.h"
+#include "torch_xla/csrc/runtime/disc/disc_ral.h"
+#include "torch_xla/csrc/runtime/stablehlo_helper.h"
 #include "xla/client/xla_computation.h"
 
 namespace torch_xla {
 namespace runtime {
 
-namespace disc {
-class DISCLoadedExecutable {};
-}  // namespace disc
-
 class DISCComputationClient : public ComputationClient {
  public:
+  const std::string DefaultDevicePrefix = "GPU:";
+
   DISCComputationClient();
   ~DISCComputationClient();
 
@@ -39,9 +39,7 @@ class DISCComputationClient : public ComputationClient {
     XLA_ERROR() << __FUNCTION__ << " not implemented";
   }
 
-  std::optional<xla::OpSharding> GetDataSharding(DataPtr handle) override {
-    XLA_ERROR() << __FUNCTION__ << " not implemented";
-  }
+  std::optional<xla::OpSharding> GetDataSharding(DataPtr handle) override;
 
   std::vector<DataPtr> TransferToDevice(
       absl::Span<const std::shared_ptr<const TensorSource>> tensors) override;
@@ -69,11 +67,12 @@ class DISCComputationClient : public ComputationClient {
   }
 
   torch::lazy::hash_t HashCompilationEnv() override {
-    XLA_ERROR() << __FUNCTION__ << " not implemented";
+    // TODO(wangang.wa): Improve this function.
+    return torch::lazy::hash_t();
   }
 
   torch_xla::DeviceType GetDeviceType() const override {
-    XLA_ERROR() << __FUNCTION__ << " not implemented";
+    return torch_xla::DeviceType("CUDA");
   };
 
   bool CoordinatorInitialized() const override {
@@ -105,29 +104,17 @@ class DISCComputationClient : public ComputationClient {
     XLA_ERROR() << __FUNCTION__ << " not implemented";
   }
 
-  size_t GetNumDevices() const override {
-    XLA_ERROR() << __FUNCTION__ << " not implemented";
-  }
+  size_t GetNumDevices() const override;
 
-  std::string GetDefaultDevice() const override {
-    XLA_ERROR() << __FUNCTION__ << " not implemented";
-  }
+  std::string GetDefaultDevice() const override;
 
-  std::vector<std::string> GetLocalDevices() const override {
-    XLA_ERROR() << __FUNCTION__ << " not implemented";
-  }
+  std::vector<std::string> GetLocalDevices() const override;
 
-  std::vector<std::string> GetAllDevices() const override {
-    XLA_ERROR() << __FUNCTION__ << " not implemented";
-  }
+  std::vector<std::string> GetAllDevices() const override;
 
-  int GetProcessIndex() const override {
-    XLA_ERROR() << __FUNCTION__ << " not implemented";
-  };
+  int GetProcessIndex() const override;
 
-  int GetNumProcesses() const override {
-    XLA_ERROR() << __FUNCTION__ << " not implemented";
-  }
+  int GetNumProcesses() const override;
 
   const absl::flat_hash_map<
       std::string, torch_xla::runtime::ComputationClient::DeviceAttribute>&
@@ -136,13 +123,9 @@ class DISCComputationClient : public ComputationClient {
   }
 
   void SetReplicationDevices(
-      std::shared_ptr<std::vector<std::string>> devices) override {
-    XLA_ERROR() << __FUNCTION__ << " not implemented";
-  }
+      std::shared_ptr<std::vector<std::string>> devices) override;
 
-  std::shared_ptr<std::vector<std::string>> GetReplicationDevices() override {
-    XLA_ERROR() << __FUNCTION__ << " not implemented";
-  }
+  std::shared_ptr<std::vector<std::string>> GetReplicationDevices() override;
 
   void WaitDeviceOps(absl::Span<const std::string> devices) override {
     XLA_ERROR() << __FUNCTION__ << " not implemented";
@@ -155,22 +138,25 @@ class DISCComputationClient : public ComputationClient {
   }
 
  private:
+  std::shared_ptr<std::vector<std::string>> replication_devices_;
+  int world_size_;
+  int local_rank_;
+  int global_rank_;
   struct DISCData : public Data {
     DISCData(std::string device, xla::Shape device_shape)
         : Data(std::move(device), std::move(device_shape)) {}
 
-    DISCData(std::string device, xla::Shape device_shape,
-             std::shared_ptr<at::Tensor> buffer)
+    DISCData(std::string device, xla::Shape device_shape, at::Tensor buffer)
         : Data(std::move(device), std::move(device_shape)), buffer(buffer) {}
 
     void Assign(const torch::lazy::BackendData& data) override;
 
     bool HasValue() const override {
-      return buffer->defined() && buffer->element_size() > 0;
+      return buffer.defined() && buffer.element_size() > 0;
     }
 
     Handle GetHandle() override {
-      XLA_ERROR() << __FUNCTION__ << " not implemented";
+      return reinterpret_cast<std::uintptr_t>(buffer.const_data_ptr());
     }
 
     bool HasSharding() const override { return false; }
@@ -188,25 +174,24 @@ class DISCComputationClient : public ComputationClient {
       ss << "  Data Shape: " << shape().ToString() << "\n";
       ss << "  Data Handle: ";
       if (HasValue()) {
-        ss << reinterpret_cast<std::uintptr_t>(buffer->const_data_ptr())
-           << "\n";
+        ss << reinterpret_cast<std::uintptr_t>(buffer.const_data_ptr()) << "\n";
       } else {
         ss << "None\n";
       }
       return ss.str();
     }
 
-    std::shared_ptr<at::Tensor> buffer;
+    at::Tensor buffer;
   };
 
   struct DISCComputation : public Computation {
     DISCComputation(xla::XlaComputation computation,
                     std::vector<std::string> devices,
-                    std::unique_ptr<disc::DISCLoadedExecutable> executable)
+                    std::unique_ptr<disc::RalContext> executable)
         : Computation(std::move(computation), std::move(devices)),
           executable(std::move(executable)) {}
 
-    std::unique_ptr<disc::DISCLoadedExecutable> executable;
+    std::unique_ptr<disc::RalContext> executable;
   };
 };
 

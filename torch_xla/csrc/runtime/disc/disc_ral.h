@@ -1,22 +1,24 @@
-#include <ATen/cuda/CUDAContext.h>
-#include <ral/context/base/base_context.h>
+#ifndef XLA_TORCH_XLA_CSRC_RUNTIME_DISC_DISCRAL_H_
+#define XLA_TORCH_XLA_CSRC_RUNTIME_DISC_DISCRAL_H_
+
+#include <ATen/Tensor.h>
+#include <c10/cuda/CUDAStream.h>
 #include <ral/context/base/cuda/cuda_context_impl.h>
-#include <torch/script.h>
+
+#include "torch_xla/csrc/runtime/disc/disc_utils.h"
 
 namespace torch_xla {
 namespace runtime {
+namespace disc {
 
-using tao::ral::BaseContext;
 using tao::ral::ExecutionContext;
 
-class DataMeta {
- public:
+struct DataMeta {
   std::string device;
   c10::ScalarType scalar_type;
 };
 
-class DISCComplationResult {
- public:
+struct DISCComplationResult {
   std::string ral_lib;
   std::string ral_mate_pb;
   std::vector<DataMeta> inputs;
@@ -27,19 +29,21 @@ class RalContext {
   using EntryFunc = std::function<void(void**)>;
 
  public:
-  RalContext(std::shared_ptr<DISCComplationResult> disc_result)
-      : disc_result_(disc_result){};
-  ~RalContext(){};
+  RalContext(const DISCComplationResult& disc_result);
+  ~RalContext();
 
-  at::List<at::Tensor> Execute(const at::List<at::Tensor>&);
+  std::vector<at::Tensor> Execute(const std::vector<at::Tensor>& inputs);
 
  private:
-  void BindingInputs(const at::List<at::Tensor>& inputs,
+  void BindingInputs(const std::vector<at::Tensor>& inputs,
                      tao::ral::ExecutionContext& exec_ctx);
-  void CheckCurrentDevice(const at::List<at::Tensor>& inputs);
-  at::List<at::Tensor> CreateAndBindingOutputs(
+  void CheckCurrentDevice(const std::vector<at::Tensor>& inputs);
+  std::vector<at::Tensor> CreateAndBindingOutputs(
+      const std::vector<at::Tensor>& inputs,
       tao::ral::ExecutionContext& exec_ctx);
-  at::List<at::Tensor> PreProcessInputs(const at::List<at::Tensor>& inputs);
+  std::vector<at::Tensor> PreProcessInputs(
+      const std::vector<at::Tensor>& inputs);
+  std::tuple<void*, void*> LoadEngine(const std::string& ral_engine_bytes);
 
   int64_t LazyInitCurrentDevice();
 
@@ -54,10 +58,16 @@ class RalContext {
   tao::ral::BaseContextOption default_opt_;
   tao::ral::cpu::BaseCpuContextOption cpu_opt_;
 
-  std::shared_ptr<DISCComplationResult> disc_result_;
+  DISCComplationResult disc_result_;
 
   void* tao_lib_;
   EntryFunc entry_func_;
+
+  TempFile lib_tmpf_{"ral_lib.so"};
+  TempFile meta_tmpf_{"ral_meta.pb"};
 };
+}  // namespace disc
 }  // namespace runtime
 }  // namespace torch_xla
+
+#endif  // XLA_TORCH_XLA_CSRC_RUNTIME_DISC_DISCRAL_H_

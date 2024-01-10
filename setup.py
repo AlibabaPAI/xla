@@ -244,9 +244,9 @@ class BuildBazelExtension(build_ext.build_ext):
 
     # copy flash attention cuda so file
     flash_attn_so_name = 'flash_attn_cuda.so'
-    shutil.copyfile(
-        '/'.join(['third_party/flash-attention', flash_attn_so_name]),
-        '/'.join([ext_dest_dir, flash_attn_so_name]))
+    bazel_bin_path = 'build/temp.linux-x86_64-cpython-310/bazel-bin/external/flash_attn/'
+    shutil.copyfile('/'.join([bazel_bin_path, flash_attn_so_name]),
+                    '/'.join([ext_dest_dir, flash_attn_so_name]))
 
     # package BladeDISC distribution files
     # please note, TorchBlade also create some symbolic links to 'torch_blade' dir

@@ -50,8 +50,8 @@ static std::string getMlirModuleBytecode(mlir::ModuleOp& mlir_module) {
   return txt_mlir_module;
 }
 
-static absl::Status ConvertHloToMhlo(const xla::HloModuleProto* proto,
-                                     mlir::ModuleOp* mlir_module) {
+absl::Status ConvertHloToMhlo(const xla::HloModuleProto* proto,
+                              mlir::ModuleOp* mlir_module) {
   auto status = xla::ConvertHloToMlirHlo(*mlir_module, proto,
                                          /*import_all_computations=*/false);
   if (!status.ok()) {
@@ -62,6 +62,17 @@ static absl::Status ConvertHloToMhlo(const xla::HloModuleProto* proto,
         absl::StatusCode::kInternal,
         "MHLO Module from HLO -> MHLO conversion is not legal.");
   }
+  mlir::PassManager pm(mlir_module->getContext());
+  // Apply pass to remove HLO tuple output, as MHLO/StableHLO supports multiple
+  // outputs.
+  pm.addPass(mlir::mhlo::createExpandHloTuplesPass());
+  // Canonicalization after tuple flatten, to remove unused tuple op.
+  pm.addNestedPass<mlir::func::FuncOp>(mlir::createCanonicalizerPass());
+
+  XLA_CHECK(mlir::succeeded(pm.run(*mlir_module)))
+      << "HLO -> MHLO conversion failed.\n"
+      << status.message();
+
   return absl::OkStatus();
 }
 
