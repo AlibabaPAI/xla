@@ -67,13 +67,6 @@ void custom_call_flash_attention_forward(cudaStream_t stream, void** buffers,
   launch_params.o_row_stride = params.o_row_stride;
   launch_params.o_head_stride = params.o_head_stride;
 
-  if (buffers[3] == nullptr) {
-    launch_params.q_batch_stride = params.q_batch_stride;
-    launch_params.k_batch_stride = params.k_batch_stride;
-    launch_params.v_batch_stride = params.v_batch_stride;
-    launch_params.o_batch_stride = params.o_batch_stride;
-  }
-
   launch_params.cu_seqlens_q = static_cast<int*>(buffers[3]);
   launch_params.cu_seqlens_k = static_cast<int*>(buffers[4]);
 
@@ -118,6 +111,7 @@ void custom_call_flash_attention_forward(cudaStream_t stream, void** buffers,
     launch_params.philox_args = gen->philox_cuda_state(counter_offset);
   }
 
+  TF_VLOG(2) << "Running FlashAttention Forward.";
   cudaEvent_t torch_wait_xla_event;
   cudaEventCreateWithFlags(&torch_wait_xla_event, cudaEventDisableTiming);
   cudaEvent_t xla_wait_torch_event;

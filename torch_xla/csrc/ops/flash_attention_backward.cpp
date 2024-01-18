@@ -92,13 +92,6 @@ void custom_call_flash_attention_backward(cudaStream_t stream, void** buffers,
   launch_params.o_row_stride = params.o_row_stride;
   launch_params.o_head_stride = params.o_head_stride;
 
-  if (buffers[6] == nullptr) {
-    launch_params.q_batch_stride = params.q_batch_stride;
-    launch_params.k_batch_stride = params.k_batch_stride;
-    launch_params.v_batch_stride = params.v_batch_stride;
-    launch_params.o_batch_stride = params.o_batch_stride;
-  }
-
   launch_params.cu_seqlens_q = static_cast<int*>(buffers[6]);
   launch_params.cu_seqlens_k = static_cast<int*>(buffers[7]);
 
@@ -148,7 +141,16 @@ void custom_call_flash_attention_backward(cudaStream_t stream, void** buffers,
   // TODO: change later, for now set to true for simplicity
   bool loop = true;
 
-  auto opts = torch::TensorOptions().dtype(torch::kFloat).device(torch::kCUDA);
+  cudaStream_t torch_stream = at::cuda::getCurrentCUDAStream().stream();
+  cudaEvent_t torch_wait_xla_event;
+  cudaEventCreateWithFlags(&torch_wait_xla_event, cudaEventDisableTiming);
+  cudaEvent_t xla_wait_torch_event;
+  cudaEventCreateWithFlags(&xla_wait_torch_event, cudaEventDisableTiming);
+  cudaEventRecord(torch_wait_xla_event, stream);
+  cudaStreamWaitEvent(torch_stream, torch_wait_xla_event);
+
+  auto scalar_type = params.is_bf16 ? torch::kBFloat16 : torch::kFloat16;
+  auto opts = torch::TensorOptions().dtype(scalar_type).device(torch::kCUDA);
   at::Tensor dq_accum;
   if (loop) {
     dq_accum =
@@ -157,16 +159,31 @@ void custom_call_flash_attention_backward(cudaStream_t stream, void** buffers,
                      opts.dtype(at::kFloat));
   }
 
-  // TODO: Support this in python
-  // at::Tensor dk_expanded, dv_expanded;
-  // if (launch_params.h_k != launch_params.h) {  // MQA / GQA
-  //   dk_expanded = torch::empty({params.total_k, launch_params.h,
-  //   launch_params.d}, opts); dv_expanded = torch::empty({params.total_k,
-  //   launch_params.h, launch_params.d}, opts);
-  // } else {
-  //   dk_expanded = dk;
-  //   dv_expanded = dv;
-  // }
+  at::Tensor dk = torch::from_blob(
+      buffers[9], {params.total_k, launch_params.h_k, launch_params.d}, opts);
+  at::Tensor dv = torch::from_blob(
+      buffers[10], {params.total_k, launch_params.h_k, launch_params.d}, opts);
+
+  at::Tensor dk_expanded, dv_expanded;
+
+  if (launch_params.h_k != launch_params.h) {  // MQA / GQA
+    TF_VLOG(2) << "Running FlashAttention Backward as MQA/GQA";
+    dk_expanded =
+        torch::empty({params.total_k, launch_params.h, launch_params.d}, opts);
+    dv_expanded =
+        torch::empty({params.total_k, launch_params.h, launch_params.d}, opts);
+
+    launch_params.dk_ptr = dk_expanded.data_ptr();
+    launch_params.dv_ptr = dv_expanded.data_ptr();
+    launch_params.dk_row_stride = dk_expanded.stride(-3);
+    launch_params.dv_row_stride = dv_expanded.stride(-3);
+    launch_params.dk_head_stride = dk_expanded.stride(-2);
+    launch_params.dv_head_stride = dv_expanded.stride(-2);
+  } else {
+    TF_VLOG(2) << "Running FlashAttention Backward";
+    dk_expanded = dk;
+    dv_expanded = dv;
+  }
 
   launch_params.dq_accum_ptr = loop ? dq_accum.data_ptr() : nullptr;
   launch_params.dk_accum_ptr = nullptr;
@@ -190,22 +207,21 @@ void custom_call_flash_attention_backward(cudaStream_t stream, void** buffers,
     launch_params.philox_args = gen->philox_cuda_state(counter_offset);
   }
 
-  cudaStream_t torch_stream = at::cuda::getCurrentCUDAStream().stream();
-  cudaEvent_t torch_wait_xla_event;
-  cudaEventCreateWithFlags(&torch_wait_xla_event, cudaEventDisableTiming);
-  cudaEvent_t xla_wait_torch_event;
-  cudaEventCreateWithFlags(&xla_wait_torch_event, cudaEventDisableTiming);
-  cudaEventRecord(torch_wait_xla_event, stream);
-  cudaStreamWaitEvent(torch_stream, torch_wait_xla_event);
+  launch(launch_params, torch_stream, /*configure=*/false);
 
-  launch(launch_params, stream, /*configure=*/false);
-
-  // TODO: Support this in python
   // For MQA/GQA we need to sum dK and dV across the groups
-  // if (launch_params.h_k != launch_params.h) {
-  //   at::sum_out(buffers[10], at::reshape(dk_expanded, {params.total_k, launch_params.h_k, launch_params.h / launch_params.h_k, launch_params.d}), {2});
-  //   at::sum_out(buffers[11], at::reshape(dv_expanded, {params.total_k, launch_params.h_k, launch_params.h / launch_params.h_k, launch_params.d}), {2});
-  // }
+  if (launch_params.h_k != launch_params.h) {
+    at::sum_out(dk,
+                at::reshape(dk_expanded, {params.total_k, launch_params.h_k,
+                                          launch_params.h / launch_params.h_k,
+                                          launch_params.d}),
+                {2});
+    at::sum_out(dv,
+                at::reshape(dv_expanded, {params.total_k, launch_params.h_k,
+                                          launch_params.h / launch_params.h_k,
+                                          launch_params.d}),
+                {2});
+  }
 
   cudaEventRecord(xla_wait_torch_event, torch_stream);
   cudaStreamWaitEvent(stream, xla_wait_torch_event);

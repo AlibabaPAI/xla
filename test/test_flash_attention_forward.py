@@ -12,11 +12,12 @@ BATCH_SIZE = 64
 SEQ_LEN = 256
 DIMS = 16
 N_HEADS = 8
+N_HEADS_KV = 4
 DROPOUT = 0.8
 SOFTMAX_SCALE = 0.25
-ZERO_TENSORS = True
+ZERO_TENSORS = False
 IS_CAUSAL = False
-RETURN_SOFTMAX = False
+RETURN_SOFTMAX = True
 NUM_SPLITS = 0
 GEN = None
 
@@ -35,12 +36,12 @@ class FlashAttentionForwardTest(unittest.TestCase):
         device=device).reshape(SEQ_LEN * BATCH_SIZE, N_HEADS,
                                DIMS).to(tensor_dtype)
     k_cuda = torch.linspace(
-        -0.5, 0.5, SEQ_LEN * BATCH_SIZE * N_HEADS * DIMS,
-        device=device).reshape(SEQ_LEN * BATCH_SIZE, N_HEADS,
+        -0.5, 0.5, SEQ_LEN * BATCH_SIZE * N_HEADS_KV * DIMS,
+        device=device).reshape(SEQ_LEN * BATCH_SIZE, N_HEADS_KV,
                                DIMS).to(tensor_dtype)
     v_cuda = torch.linspace(
-        -0.5, 0.5, SEQ_LEN * BATCH_SIZE * N_HEADS * DIMS,
-        device=device).reshape(SEQ_LEN * BATCH_SIZE, N_HEADS,
+        -0.5, 0.5, SEQ_LEN * BATCH_SIZE * N_HEADS_KV * DIMS,
+        device=device).reshape(SEQ_LEN * BATCH_SIZE, N_HEADS_KV,
                                DIMS).to(tensor_dtype)
     out_cuda = torch.zeros_like(q_cuda)
     cu_seqlens_q_cuda = torch.arange(
@@ -49,7 +50,7 @@ class FlashAttentionForwardTest(unittest.TestCase):
         dtype=torch.int32,
         device=device)
     cu_seqlens_k_cuda = cu_seqlens_q_cuda
-    out_cuda, softmax_lse_cuda, S_dmask_cuda = flash_attn_varlen_func(
+    out_cuda, softmax_lse_cuda, _ = flash_attn_varlen_func(
         q_cuda, k_cuda, v_cuda, cu_seqlens_q_cuda, cu_seqlens_k_cuda, SEQ_LEN,
         SEQ_LEN, DROPOUT, SOFTMAX_SCALE, IS_CAUSAL, RETURN_SOFTMAX)
     torch.cuda.synchronize()
@@ -63,12 +64,12 @@ class FlashAttentionForwardTest(unittest.TestCase):
         device=device).reshape(SEQ_LEN * BATCH_SIZE, N_HEADS,
                                DIMS).to(tensor_dtype)
     k_xla = torch.linspace(
-        -0.5, 0.5, SEQ_LEN * BATCH_SIZE * N_HEADS * DIMS,
-        device=device).reshape(SEQ_LEN * BATCH_SIZE, N_HEADS,
+        -0.5, 0.5, SEQ_LEN * BATCH_SIZE * N_HEADS_KV * DIMS,
+        device=device).reshape(SEQ_LEN * BATCH_SIZE, N_HEADS_KV,
                                DIMS).to(tensor_dtype)
     v_xla = torch.linspace(
-        -0.5, 0.5, SEQ_LEN * BATCH_SIZE * N_HEADS * DIMS,
-        device=device).reshape(SEQ_LEN * BATCH_SIZE, N_HEADS,
+        -0.5, 0.5, SEQ_LEN * BATCH_SIZE * N_HEADS_KV * DIMS,
+        device=device).reshape(SEQ_LEN * BATCH_SIZE, N_HEADS_KV,
                                DIMS).to(tensor_dtype)
     cu_seqlens_q_xla = torch.arange(
         0, (BATCH_SIZE + 1) * SEQ_LEN,

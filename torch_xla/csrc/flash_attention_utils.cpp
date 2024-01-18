@@ -35,6 +35,7 @@ std::string FlashAttentionForwardParams::ToString() const {
   absl::StrAppend(&result, absl::StrCat(this->q_head_stride), "|");
   absl::StrAppend(&result, absl::StrCat(this->k_head_stride), "|");
   absl::StrAppend(&result, absl::StrCat(this->v_head_stride), "|");
+  absl::StrAppend(&result, absl::StrCat(this->total_k), "|");
   absl::StrAppend(&result, absl::StrCat(this->h), "|");
   absl::StrAppend(&result, absl::StrCat(this->h_k), "|");
   absl::StrAppend(&result, absl::StrCat(this->h_h_k_ratio), "|");
@@ -62,7 +63,7 @@ std::string FlashAttentionForwardParams::ToString() const {
 
 void FlashAttentionForwardParams::FromString(const std::string& str) {
   std::vector<std::string> params_list = absl::StrSplit(str, "|");
-  TORCH_CHECK(params_list.size() >= 30);  // at least 30 variables
+  TORCH_CHECK(params_list.size() >= 31);  // at least 31 variables
   absl::SimpleAtoi(params_list[0], &this->q_batch_stride);
   absl::SimpleAtoi(params_list[1], &this->k_batch_stride);
   absl::SimpleAtoi(params_list[2], &this->v_batch_stride);
@@ -72,29 +73,30 @@ void FlashAttentionForwardParams::FromString(const std::string& str) {
   absl::SimpleAtoi(params_list[6], &this->q_head_stride);
   absl::SimpleAtoi(params_list[7], &this->k_head_stride);
   absl::SimpleAtoi(params_list[8], &this->v_head_stride);
-  absl::SimpleAtoi(params_list[9], &this->h);
-  absl::SimpleAtoi(params_list[10], &this->h_k);
-  absl::SimpleAtoi(params_list[11], &this->h_h_k_ratio);
-  absl::SimpleAtoi(params_list[12], &this->o_batch_stride);
-  absl::SimpleAtoi(params_list[13], &this->o_row_stride);
-  absl::SimpleAtoi(params_list[14], &this->o_head_stride);
-  absl::SimpleAtoi(params_list[15], &this->b);
-  absl::SimpleAtoi(params_list[16], &this->seqlen_q);
-  absl::SimpleAtoi(params_list[17], &this->seqlen_k);
-  absl::SimpleAtoi(params_list[18], &this->d);
-  absl::SimpleAtoi(params_list[19], &this->seqlen_q_rounded);
-  absl::SimpleAtoi(params_list[20], &this->seqlen_k_rounded);
-  absl::SimpleAtoi(params_list[21], &this->d_rounded);
-  absl::SimpleAtof(params_list[22], &this->scale_softmax);
-  absl::SimpleAtof(params_list[23], &this->scale_softmax_log2);
-  absl::SimpleAtof(params_list[24], &this->p_dropout);
+  absl::SimpleAtoi(params_list[9], &this->total_k);
+  absl::SimpleAtoi(params_list[10], &this->h);
+  absl::SimpleAtoi(params_list[11], &this->h_k);
+  absl::SimpleAtoi(params_list[12], &this->h_h_k_ratio);
+  absl::SimpleAtoi(params_list[13], &this->o_batch_stride);
+  absl::SimpleAtoi(params_list[14], &this->o_row_stride);
+  absl::SimpleAtoi(params_list[15], &this->o_head_stride);
+  absl::SimpleAtoi(params_list[16], &this->b);
+  absl::SimpleAtoi(params_list[17], &this->seqlen_q);
+  absl::SimpleAtoi(params_list[18], &this->seqlen_k);
+  absl::SimpleAtoi(params_list[19], &this->d);
+  absl::SimpleAtoi(params_list[20], &this->seqlen_q_rounded);
+  absl::SimpleAtoi(params_list[21], &this->seqlen_k_rounded);
+  absl::SimpleAtoi(params_list[22], &this->d_rounded);
+  absl::SimpleAtof(params_list[23], &this->scale_softmax);
+  absl::SimpleAtof(params_list[24], &this->scale_softmax_log2);
+  absl::SimpleAtof(params_list[25], &this->p_dropout);
   uint32_t tmp;
-  absl::SimpleAtoi(params_list[25], &tmp);
+  absl::SimpleAtoi(params_list[26], &tmp);
   this->p_dropout_in_uint8_t = uint8_t(tmp);
-  absl::SimpleAtof(params_list[26], &this->rp_dropout);
-  absl::SimpleAtof(params_list[27], &this->scale_softmax_rp_dropout);
-  absl::SimpleAtob(params_list[28], &this->is_bf16);
-  absl::SimpleAtob(params_list[29], &this->is_causal);
+  absl::SimpleAtof(params_list[27], &this->rp_dropout);
+  absl::SimpleAtof(params_list[28], &this->scale_softmax_rp_dropout);
+  absl::SimpleAtob(params_list[29], &this->is_bf16);
+  absl::SimpleAtob(params_list[30], &this->is_causal);
 }
 
 std::string FlashAttentionBackwardParams::ToString() const {
@@ -118,8 +120,8 @@ std::string FlashAttentionBackwardParams::ToString() const {
 void FlashAttentionBackwardParams::FromString(const std::string& str) {
   FlashAttentionForwardParams::FromString(str);
   std::vector<std::string> params_list = absl::StrSplit(str, "|");
-  TORCH_CHECK(params_list.size() == 42);
-  const int offset = 30;  // FlashAttentionForwardParams has 30 variables
+  TORCH_CHECK(params_list.size() == 43);
+  const int offset = 31;  // FlashAttentionForwardParams has 31 variables
   absl::SimpleAtoi(params_list[offset + 0], &this->do_batch_stride);
   absl::SimpleAtoi(params_list[offset + 1], &this->do_row_stride);
   absl::SimpleAtoi(params_list[offset + 2], &this->do_head_stride);
@@ -157,13 +159,6 @@ void set_forward_params(FlashAttentionForwardParams& params, const size_t b,
   params.v_head_stride = v.stride(-2);
   params.o_row_stride = q.stride(-3);
   params.o_head_stride = q.stride(-2);
-
-  if (cu_seqlens_q_d == nullptr) {
-    params.q_batch_stride = q.stride(0);
-    params.k_batch_stride = k.stride(0);
-    params.v_batch_stride = v.stride(0);
-    params.o_batch_stride = q.stride(0);
-  }
 
   // Set the dimensions.
   params.b = b;
@@ -220,13 +215,6 @@ void set_backward_params(FlashAttentionBackwardParams& params, const size_t b,
   params.dq_head_stride = q.stride(-2);
   params.dk_head_stride = k.stride(-2);
   params.dv_head_stride = v.stride(-2);
-
-  if (cu_seqlens_q_d == nullptr) {
-    params.do_batch_stride = dout.stride(0);
-    params.dq_batch_stride = q.stride(0);
-    params.dk_batch_stride = k.stride(0);
-    params.dv_batch_stride = v.stride(0);
-  }
 }
 
 FlashAttentionForwardParams get_flash_attention_forward_params(

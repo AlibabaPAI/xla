@@ -8,9 +8,9 @@ import flash_attn_2_cuda as flash_attn_cuda
 import torch_xla
 import torch_xla.core.xla_model as xm
 
-BATCH_SIZE = 64
+BATCH_SIZE = 16
 SEQ_LEN = 256
-DIMS = 16
+DIMS = 32
 N_HEADS = 8
 DROPOUT = 0.8
 SOFTMAX_SCALE = 0.25
@@ -22,7 +22,7 @@ GEN = None
 
 class FlashAttentionBackwardTest(unittest.TestCase):
 
-  def _backward_internal(self, tensor_dtype):
+  def _backward_internal(self, tensor_dtype, n_heads_kv=N_HEADS):
     # original flash attention
     device = 'cuda:0'
     q_cuda = torch.linspace(
@@ -31,13 +31,13 @@ class FlashAttentionBackwardTest(unittest.TestCase):
                                DIMS).to(tensor_dtype)
     dq_cuda = torch.zeros_like(q_cuda)
     k_cuda = torch.linspace(
-        -0.5, 0.5, SEQ_LEN * BATCH_SIZE * N_HEADS * DIMS,
-        device=device).reshape(SEQ_LEN * BATCH_SIZE, N_HEADS,
+        -0.5, 0.5, SEQ_LEN * BATCH_SIZE * n_heads_kv * DIMS,
+        device=device).reshape(SEQ_LEN * BATCH_SIZE, n_heads_kv,
                                DIMS).to(tensor_dtype)
     dk_cuda = torch.zeros_like(k_cuda)
     v_cuda = torch.linspace(
-        -0.5, 0.5, SEQ_LEN * BATCH_SIZE * N_HEADS * DIMS,
-        device=device).reshape(SEQ_LEN * BATCH_SIZE, N_HEADS,
+        -0.5, 0.5, SEQ_LEN * BATCH_SIZE * n_heads_kv * DIMS,
+        device=device).reshape(SEQ_LEN * BATCH_SIZE, n_heads_kv,
                                DIMS).to(tensor_dtype)
     dv_cuda = torch.zeros_like(v_cuda)
     out_cuda = torch.linspace(
@@ -72,13 +72,13 @@ class FlashAttentionBackwardTest(unittest.TestCase):
                                DIMS).to(tensor_dtype)
     dq_xla = torch.zeros_like(q_xla)
     k_xla = torch.linspace(
-        -0.5, 0.5, SEQ_LEN * BATCH_SIZE * N_HEADS * DIMS,
-        device=device).reshape(SEQ_LEN * BATCH_SIZE, N_HEADS,
+        -0.5, 0.5, SEQ_LEN * BATCH_SIZE * n_heads_kv * DIMS,
+        device=device).reshape(SEQ_LEN * BATCH_SIZE, n_heads_kv,
                                DIMS).to(tensor_dtype)
     dk_xla = torch.zeros_like(k_xla)
     v_xla = torch.linspace(
-        -0.5, 0.5, SEQ_LEN * BATCH_SIZE * N_HEADS * DIMS,
-        device=device).reshape(SEQ_LEN * BATCH_SIZE, N_HEADS,
+        -0.5, 0.5, SEQ_LEN * BATCH_SIZE * n_heads_kv * DIMS,
+        device=device).reshape(SEQ_LEN * BATCH_SIZE, n_heads_kv,
                                DIMS).to(tensor_dtype)
     dv_xla = torch.zeros_like(v_xla)
     out_xla = torch.linspace(
@@ -119,9 +119,17 @@ class FlashAttentionBackwardTest(unittest.TestCase):
     assert torch.allclose(
         dv_cuda.cpu().detach(), dv_xla.cpu().detach(), rtol=1e-2, atol=1e-2)
 
-  def test_flash_attn_backward(self):
-    self._backward_internal(torch.float16)
-    self._backward_internal(torch.bfloat16)
+  def test_flash_attn_gqa_backward_fp16(self):
+    self._backward_internal(torch.float16, n_heads_kv=int(N_HEADS // 2))
+
+  def test_flash_attn_gqa_backward_bf16(self):
+    self._backward_internal(torch.bfloat16, n_heads_kv=int(N_HEADS // 2))
+
+  def test_flash_attn_backward_fp16(self):
+    self._backward_internal(torch.float16, n_heads_kv=N_HEADS)
+
+  def test_flash_attn_backward_bf16(self):
+    self._backward_internal(torch.bfloat16, n_heads_kv=N_HEADS)
 
 
 if __name__ == '__main__':
