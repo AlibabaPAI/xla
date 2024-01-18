@@ -432,8 +432,8 @@ class XlaFlattenParamsWrapper(nn.Module):
       else:
         setattr(m, n, getattr(shared_m, shared_n))
 
-  def replace_unflatten_params_view(self, rhs) -> None:
-    for _, m, n in self._param_infos:
+  def replace_unflatten_params_view(self, param_infos, rhs) -> None:
+    for _, m, n in param_infos:
       if hasattr(m, n):
         torch_xla._XLAC._replace_xla_tensor(getattr(m, n), rhs)
 

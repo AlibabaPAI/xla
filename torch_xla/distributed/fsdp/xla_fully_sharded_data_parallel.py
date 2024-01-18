@@ -1078,9 +1078,10 @@ class XlaFullyShardedDataParallel(nn.Module):
         if self.flatten_parameters:
           for p in self.full_params:
             # rebuild unflatten params views
-            param_views = p.get_param_views()
-            for (_, m, n), view in zip(self.module._param_infos, param_views):
-              torch_xla._XLAC._replace_xla_tensor(getattr(m, n), view)
+            if hasattr(p, '_param_infos'):
+              param_views = p.get_param_views()
+              for (_, m, n), view in zip(p._param_infos, param_views):
+                torch_xla._XLAC._replace_xla_tensor(getattr(m, n), view)
         self._clear_backward_opt_barrier_lists()
 
       # Only run the following once per iteration (i.e. in case
@@ -1499,9 +1500,12 @@ class XlaFullyShardedDataParallel(nn.Module):
           else:
             torch_xla._XLAC._replace_xla_tensor(p, self._dummy_data_placeholder)
         p._has_full_param = False
-    if self.flatten_parameters and len(self.full_params) > 0:
+    if self.flatten_parameters:
       # free the unflatten views of full parameters
-      self.module.replace_unflatten_params_view(self._dummy_data_placeholder)
+      for p in full_params:
+        if hasattr(p, '_param_infos'):
+          self.module.replace_unflatten_params_view(
+              p._param_infos, self._dummy_data_placeholder)
 
     if apply_opt_barrier:
       self._apply_opt_barrier_to_params_and_tensors(
