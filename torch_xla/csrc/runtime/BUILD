@@ -12,11 +12,17 @@ load(
     "//bazel:rules_def.bzl",
     "ptxla_cc_library",
     "ptxla_cc_test",
+    "if_enable_disc",
 )
 
 licenses(["notice"])  # Apache 2.0
 
 package(default_visibility = ["//visibility:public"])
+
+config_setting(
+    name = "enable_disc",
+    define_values = {"enable_disc": "true"},
+)
 
 cc_library(
   name = "runtime",
@@ -31,9 +37,13 @@ cc_library(
     ":env_vars",
     ":pjrt_computation_client",
     ":ifrt_computation_client",
-    ":disc_computation_client",
     "@tsl//tsl/platform:stacktrace",
-  ],
+  ] + if_enable_disc([
+    ":disc_computation_client",
+  ]),
+  copts = if_enable_disc([
+    "-DTORCHACC_ENABLE_DISC",
+  ]),
 )
 
 cc_library(

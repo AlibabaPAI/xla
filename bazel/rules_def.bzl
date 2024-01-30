@@ -39,3 +39,9 @@ def ptxla_cc_test(
         ],
         **kwargs
     )
+
+def if_enable_disc(if_true, if_false=[]):
+    return select({
+        "//torch_xla/csrc/runtime:enable_disc": if_true,
+        "//conditions:default": if_false
+    })

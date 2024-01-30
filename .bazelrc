@@ -223,3 +223,6 @@ build:linux --copt="-Wno-error=unused-but-set-variable"
 # Only include debug info for files not under XLA.
 build:dbg -c dbg
 build:dbg --per_file_copt=external/xla/.*@-g0,-DNDEBUG
+
+# build with DISC backend
+build --define enable_disc=true

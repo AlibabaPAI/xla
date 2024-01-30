@@ -231,6 +231,9 @@ class BuildBazelExtension(build_ext.build_ext):
 
     bazel_argv.extend(build_util.bazel_options_from_env())
 
+    if not build_util.check_env_flag('ENABLE_DISC', 'true'):
+      bazel_argv.append('--define=enable_disc=false')
+
     self.spawn(bazel_argv)
 
     ext_bazel_bin_path = os.path.join(self.build_temp, 'bazel-bin', ext.relpath,
