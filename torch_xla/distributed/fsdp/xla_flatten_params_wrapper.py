@@ -438,6 +438,11 @@ class XlaFlattenParamsWrapper(nn.Module):
       if hasattr(m, n):
         torch_xla._XLAC._replace_xla_tensor(getattr(m, n), rhs)
 
+  def delete_unflatten_params_view(self, param_infos) -> None:
+    for _, m, n in param_infos:
+      if hasattr(m, n):
+        delattr(m, n)
+
   @contextmanager
   def unflatten_params(self,
                        flat_params: Optional[List[Tensor]] = None) -> Generator:
