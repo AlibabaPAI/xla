@@ -1281,6 +1281,9 @@ class XlaFullyShardedDataParallel(nn.Module):
           [param],
           dependency_tensors=[grad],
           apply_opt_barrier=self.optimization_barrier_in_backward)
+      # This fixes issue: https://github.com/pytorch/xla/issues/6596
+      if hasattr(param, '_param_infos'):
+        self.module.delete_unflatten_params_view(param._param_infos)
 
     if not self._require_backward_grad_sync:
       return
