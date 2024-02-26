@@ -1,6 +1,8 @@
 from types import MethodType
 
 import torch
+from torch.distributed.utils import _apply_to_tensors
+from torch.utils.checkpoint import check_backward_validity, detach_variable
 import torch_xla.core.xla_model as xm
 from torch_xla.utils.checkpoint import checkpoint
 
@@ -157,4 +159,128 @@ def apply_xla_patch_to_nn_linear(module,
       # also handle the case of gradient checkpointing via `checkpoint_module`
       _try_patching_forward_method(m, "_xla_checkpointed_forward_original")
 
+  return module
+
+
+class AutogradFunction(torch.autograd.Function):
+  """
+  This class creates a separate computational graph during the forward pass and
+  calls `torch.autograd.backward` during the backward pass. This class allows the
+  reduce_scatter hook of FSDP to be correctly triggered during backward when flatten
+  parameters is enabled, rather than triggering the reduce_scatter hooks collectively
+  at the end of the backward pass.
+  """
+
+  @staticmethod
+  def forward(ctx, run_function, *args):
+    check_backward_validity(args)
+    args = detach_variable(tuple(args))
+
+    # Save non-tensor inputs in ctx, keep a placeholder None for tensors
+    # to be filled out during the backward.
+    ctx.inputs = []
+    ctx.input_tensor_indices = []
+    tensor_inputs = []
+
+    for i, arg in enumerate(args):
+      if torch.is_tensor(arg):
+        tensor_inputs.append(arg)
+        ctx.input_tensor_indices.append(i)
+        ctx.inputs.append(None)
+      else:
+        ctx.inputs.append(arg)
+
+    with torch.enable_grad():
+      outputs = run_function(*args)
+
+    ctx.outputs = []
+    ctx.output_tensor_indices = []
+    tensor_outputs = []
+    for i, out in enumerate(outputs):
+      if torch.is_tensor(out):
+        tensor_outputs.append(out)
+        ctx.output_tensor_indices.append(i)
+        ctx.outputs.append(None)
+      else:
+        ctx.outputs.append(out)
+
+    ctx.save_for_backward(*(tensor_inputs + tensor_outputs))
+    outputs = _apply_to_tensors(lambda t: t.clone().detach(), outputs)
+
+    return outputs
+
+  @staticmethod
+  def backward(ctx, *args):
+    if not torch.autograd._is_checkpoint_valid():
+      raise RuntimeError(
+          "AutogradFunction is not compatible with .grad() or when an `inputs` parameter"
+          " is passed to .backward(). Please use .backward() and do not pass its `inputs`"
+          " argument.")
+    tensors = ctx.saved_tensors
+
+    # Copy the list to avoid modifying original list.
+    inputs = list(ctx.inputs)
+    input_tensor_indices = ctx.input_tensor_indices
+    # Fill in inputs with appropriate saved tensors.
+    for i, idx in enumerate(input_tensor_indices):
+      inputs[idx] = tensors[i]
+
+    outputs = list(ctx.outputs)
+    output_tensor_indices = ctx.output_tensor_indices
+    # Fill in outputs with appropriate saved tensors.
+    for i, idx in enumerate(output_tensor_indices):
+      outputs[idx] = tensors[len(input_tensor_indices) + i]
+
+    # run backward() with only tensor that requires grad
+    outputs_with_grad = []
+    args_with_grad = []
+    for i in range(len(outputs)):
+      if torch.is_tensor(outputs[i]) and outputs[i].requires_grad:
+        outputs_with_grad.append(outputs[i])
+        args_with_grad.append(args[i])
+    if len(outputs_with_grad) == 0:
+      raise RuntimeError("none of output has requires_grad=True,"
+                         " this autograd_module() is not necessary")
+    torch.autograd.backward(outputs_with_grad, args_with_grad)
+    grads = tuple(
+        inp.grad if isinstance(inp, torch.Tensor) else None for inp in inputs)
+
+    return (None,) + grads
+
+
+def autograd_module(module):
+  """
+  Wrap a `module`'s `forward` method with `AutogradFunction`.
+  """
+
+  def _xla_autograd_forward_no_kwargs(m, num_args, num_kwargs, *packed_args):
+    # unpack packed_args into args and kwargs
+    assert num_args + num_kwargs * 2 == len(packed_args)
+    args = packed_args[:num_args]
+    kwargs = packed_args[num_args:]
+    kwargs = dict(zip(kwargs[:num_kwargs], kwargs[num_kwargs:]))
+    return m._xla_autograd_forward_original(*args, **kwargs)
+
+  def _forward_with_autograd(m, *args, **kwargs):
+    # pack args and kwargs together as `AutogradFunction`
+    # doesn't support keyword arguments
+    packed_args = args + tuple(kwargs.keys()) + tuple(kwargs.values())
+    input_requires_grad = any(
+        isinstance(t, torch.Tensor) and t.requires_grad for t in packed_args)
+    if input_requires_grad:
+      outputs = AutogradFunction.apply(m._xla_autograd_forward_no_kwargs,
+                                       len(args), len(kwargs), *packed_args)
+    else:
+      # No input requires gradients so we won't wrap this forward pass.
+      # Note that `m`` might have parameters that require gradients, but they
+      # are beyond what `AutogradFunction` can handle.
+      outputs = m._xla_autograd_forward_original(*args, **kwargs)
+    return outputs
+
+  assert isinstance(module, torch.nn.Module)
+  # replace `module`'s forward method with its autograd version
+  module._xla_autograd_forward_original = module.forward
+  module._xla_autograd_forward_no_kwargs = MethodType(
+      _xla_autograd_forward_no_kwargs, module)
+  module.forward = MethodType(_forward_with_autograd, module)
   return module

@@ -35,7 +35,7 @@ import torch_xla
 import torch_xla.core.xla_model as xm
 
 from .xla_flatten_params_wrapper import XlaFlattenParamsWrapper
-from .utils import dummy_all_gather, dummy_all_reduce, dummy_reduce_scatter, apply_xla_patch_to_nn_linear
+from .utils import dummy_all_gather, dummy_all_reduce, dummy_reduce_scatter, apply_xla_patch_to_nn_linear, autograd_module
 from .wrap import recursive_wrap
 from ._init_utils import _materialize_module
 
@@ -141,6 +141,9 @@ class XlaFullyShardedDataParallel(nn.Module):
           original parameters in the wrapped module (e.g. setting bias terms or
           any BatchNorm submodules to have zero weight decay) since all the
           original parameters now become a single concatenated vector.
+      opt_flatten_overlap (bool, Optional):
+          if ``True``, optimize the overlap of computation and communication.
+          This option is only enabled when flatten_parameters is enabled
       execute_sharding_on_init (bool, Optional):
           if ``True``, immediately execute the parameter sharding via
           `xm.mark_step` to free up the memory of the full parameters.
@@ -282,6 +285,7 @@ class XlaFullyShardedDataParallel(nn.Module):
       module: nn.Module,
       reshard_after_forward: bool = True,
       flatten_parameters: bool = False,
+      opt_flatten_overlap: bool = False,
       execute_sharding_on_init: bool = True,
       optimization_barrier_in_forward: bool = True,
       optimization_barrier_in_backward: bool = True,
@@ -330,6 +334,7 @@ class XlaFullyShardedDataParallel(nn.Module):
     super().__init__()
 
     wrapper_cls = auto_wrapper_callable or XlaFullyShardedDataParallel
+    opt_flatten_overlap = opt_flatten_overlap if flatten_parameters else False
     if auto_wrap_policy is not None:
       auto_wrap_kwargs = {
           "module": module,
@@ -358,6 +363,7 @@ class XlaFullyShardedDataParallel(nn.Module):
           # `auto_wrap_policy` doesn't need to be specified in auto-wrapping
           # `auto_wrapper_callable`` doesn't need to be specified in auto-wrapping
           param_init_fn=param_init_fn,
+          opt_flatten_overlap=opt_flatten_overlap,
           _shard_size_multiple=_shard_size_multiple,
           _use_xla_patched_linear=_use_xla_patched_linear,
           _debug_dummy_forward_pass=_debug_dummy_forward_pass,
@@ -386,6 +392,8 @@ class XlaFullyShardedDataParallel(nn.Module):
           f"buffer_dtype must be one of {FLOAT_DTYPES}, not {buffer_dtype}")
     self.buffer_dtype = buffer_dtype or self.compute_dtype
     self.fp32_reduce_scatter = fp32_reduce_scatter
+
+    self.opt_flatten_overlap = opt_flatten_overlap
 
     # Make sharded parameter sizes a multiple of 128 for efficient all_gather ops on TPUs
     # (see https://github.com/pytorch/xla/issues/3510#issuecomment-1101739677 for details)
@@ -485,6 +493,7 @@ class XlaFullyShardedDataParallel(nn.Module):
     # Here, we don't automatically unflatten XlaFlattenParamsWrapper's state dict
     # to avoid overhead on XLA devices. Use ``get_shard_metadata`` to save parameter info
     # ``consolidate_sharded_model_checkpoints`` to consolidate the sharded checkpoints.
+    module = autograd_module(module) if opt_flatten_overlap else module
     self._fsdp_wrapped_module: nn.Module = XlaFlattenParamsWrapper(
         module,
         param_list=to_be_flatten_params,
@@ -844,6 +853,8 @@ class XlaFullyShardedDataParallel(nn.Module):
     self._backward_opt_barrier_tensors: Optional[List] = None
     self._backward_opt_barrier_tensor_ids: Optional[Set] = None
     self.reshard_after_forward = self._orig_reshard_after_forward
+    self._delayed_reduce_scatter: Optional[Dict] = None
+    self._backward_opt_grads: Optional[Dict] = None
 
   def _lazy_init(self) -> None:
     """
@@ -907,11 +918,15 @@ class XlaFullyShardedDataParallel(nn.Module):
     self._output_pre_backward_hook_registered = set()
     self._backward_opt_barrier_tensors = []
     self._backward_opt_barrier_tensor_ids = set()
+    self._delayed_reduce_scatter = {}
+    self._backward_opt_grads = {}
     for n, m in self.named_modules():
       if n != "" and isinstance(m, XlaFullyShardedDataParallel):
         m._output_pre_backward_hook_registered = self._output_pre_backward_hook_registered
         m._backward_opt_barrier_tensors = self._backward_opt_barrier_tensors
         m._backward_opt_barrier_tensor_ids = self._backward_opt_barrier_tensor_ids
+        m._delayed_reduce_scatter = self._delayed_reduce_scatter
+        m._backward_opt_grads = self._backward_opt_grads
 
   def forward(self, *args: Any, **kwargs: Any) -> torch.Tensor:
     self._lazy_init()
@@ -925,7 +940,7 @@ class XlaFullyShardedDataParallel(nn.Module):
 
     # All-gather full parameters.
     input_opt_barrier_tensors = []
-    if self.optimization_barrier_in_forward:
+    if self.optimization_barrier_in_forward and not self.opt_flatten_overlap:
       # Ensure that previous ops to build this module's inputs (which are
       # usually performed in previous modules) are finished before rebuilding
       # the full params of this FSDP module.
@@ -1057,7 +1072,7 @@ class XlaFullyShardedDataParallel(nn.Module):
       if self._is_root:
         self._queue_wait_for_post_backward()
 
-      if self.optimization_barrier_in_backward:
+      if self.optimization_barrier_in_backward and not self.opt_flatten_overlap:
         self._try_adding_to_backward_opt_barrier_lists(t_grad)
       # All-gather full parameters or switching to the full params.
       # Note, ``self._rebuild_full_params`` is idempotent. So in case it is called
@@ -1083,6 +1098,15 @@ class XlaFullyShardedDataParallel(nn.Module):
               for (_, m, n), view in zip(p._param_infos, param_views):
                 torch_xla._XLAC._replace_xla_tensor(getattr(m, n), view)
         self._clear_backward_opt_barrier_lists()
+
+      if len(self._delayed_reduce_scatter) > 0:
+        if len(self._backward_opt_grads) > 0:
+          self._apply_opt_barrier_to_params_and_tensors(
+              list(self._backward_opt_grads.values()), [], [t_grad])
+          self._backward_opt_grads.clear()
+        for func in self._delayed_reduce_scatter.values():
+          func()
+        self._delayed_reduce_scatter.clear()
 
       # Only run the following once per iteration (i.e. in case
       # it is multiple outputs or multiple forward passes).
@@ -1219,51 +1243,58 @@ class XlaFullyShardedDataParallel(nn.Module):
     if not self._require_backward_grad_sync:
       return
 
-    if self.gradient_predivide_factor > 1:
-      # Average grad by world_size for consistency with PyTorch DDP.
-      grad.div_(self.gradient_predivide_factor)
+    def _reduce_scatter():
+      if self.gradient_predivide_factor > 1:
+        # Average grad by world_size for consistency with PyTorch DDP.
+        grad.div_(self.gradient_predivide_factor)
 
-    # Shard the gradients with `reduce_scatter`.
-    # Clear grad on the tensor, so any repeated gradient computations do not interfere with this reduction.
-    param.grad = None
-    grad_flat = self._flatten_and_pad_to_world_size(
-        grad, self.world_size * self._shard_size_multiple)
-    if self.optimization_barrier_in_backward:
-      self.optimization_barrier_op([grad_flat])
-    if grad_flat.dtype != torch.float32 and self.fp32_reduce_scatter:
-      grad_flat = grad_flat.to(torch.float32)
-    reduced_grad = self.reduce_scatter_op(
-        xm.REDUCE_SUM,
-        grad_flat.detach(),
-        scale=1.0,
-        scatter_dim=0,
-        shard_count=self.world_size,
-        groups=self.sharding_groups)
-    if reduced_grad.dtype != torch.float32:
-      reduced_grad = reduced_grad.to(torch.float32)
-    if self.optimization_barrier_in_backward:
-      self.optimization_barrier_op([reduced_grad])
-    if self.gradient_postdivide_factor > 1:
-      # Average grad by world_size for consistency with PyTorch DDP.
-      reduced_grad.div_(self.gradient_postdivide_factor)
+      # Shard the gradients with `reduce_scatter`.
+      # Clear grad on the tensor, so any repeated gradient computations do not interfere with this reduction.
+      param.grad = None
+      grad_flat = self._flatten_and_pad_to_world_size(
+          grad, self.world_size * self._shard_size_multiple)
+      if self.optimization_barrier_in_backward:
+        self.optimization_barrier_op([grad_flat])
+      if grad_flat.dtype != torch.float32 and self.fp32_reduce_scatter:
+        grad_flat = grad_flat.to(torch.float32)
+      reduced_grad = self.reduce_scatter_op(
+          xm.REDUCE_SUM,
+          grad_flat.detach(),
+          scale=1.0,
+          scatter_dim=0,
+          shard_count=self.world_size,
+          groups=self.sharding_groups)
+      if reduced_grad.dtype != torch.float32:
+        reduced_grad = reduced_grad.to(torch.float32)
+      if self.optimization_barrier_in_backward:
+        self.optimization_barrier_op([reduced_grad])
+      if self.gradient_postdivide_factor > 1:
+        # Average grad by world_size for consistency with PyTorch DDP.
+        reduced_grad.div_(self.gradient_postdivide_factor)
 
-    grad._has_full_param = True
-    grad_flat._has_full_param = True
-    self._free_full_params(
-        [grad, grad_flat],
-        dependency_tensors=[reduced_grad],
-        apply_opt_barrier=self.optimization_barrier_in_backward)
-    self._try_adding_to_backward_opt_barrier_lists(reduced_grad)
+      grad._has_full_param = True
+      grad_flat._has_full_param = True
+      self._free_full_params(
+          [grad, grad_flat],
+          dependency_tensors=[reduced_grad],
+          apply_opt_barrier=self.optimization_barrier_in_backward)
+      # self._try_adding_to_backward_opt_barrier_lists(reduced_grad)
 
-    # Accumulate into the gradient shard.
-    assert hasattr(param, "_sharded_param")
-    p_shard = param._sharded_param
-    if p_shard.grad is None:
-      p_shard.grad = reduced_grad
+      # Accumulate into the gradient shard.
+      assert hasattr(param, "_sharded_param")
+      p_shard = param._sharded_param
+      if p_shard.grad is None:
+        p_shard.grad = reduced_grad
+      else:
+        assert p_shard.grad.shape == reduced_grad.shape
+        assert p_shard.grad.device == reduced_grad.device
+        p_shard.grad += reduced_grad
+
+    if self.opt_flatten_overlap:
+      self._backward_opt_grads[id(param)] = grad
+      self._delayed_reduce_scatter[id(param)] = _reduce_scatter
     else:
-      assert p_shard.grad.shape == reduced_grad.shape
-      assert p_shard.grad.device == reduced_grad.device
-      p_shard.grad += reduced_grad
+      _reduce_scatter()
 
   def _queue_wait_for_post_backward(self) -> None:
     """
@@ -1310,6 +1341,12 @@ class XlaFullyShardedDataParallel(nn.Module):
       self.assert_state(TrainingState.BACKWARD_POST)
     else:
       self.assert_state(TrainingState.BACKWARD_PRE)
+
+    if len(self._delayed_reduce_scatter) > 0:
+      for func in self._delayed_reduce_scatter.values():
+        func()
+      self._delayed_reduce_scatter.clear()
+    self._backward_opt_grads.clear()
 
     # A backward pass is done, clean up below.
     def _finalize_parameters(fsdp_module: XlaFullyShardedDataParallel) -> None:
