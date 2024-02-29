@@ -144,6 +144,10 @@ class XlaFullyShardedDataParallel(nn.Module):
       opt_flatten_overlap (bool, Optional):
           if ``True``, optimize the overlap of computation and communication.
           This option is only enabled when flatten_parameters is enabled
+      sync_module_states (bool, Optional):
+          If ``True``, then each FSDP module will broadcast module parameters
+          and buffers from rank 0 to ensure that they are replicated across
+          ranks (adding communication overhead to this constructor).
       execute_sharding_on_init (bool, Optional):
           if ``True``, immediately execute the parameter sharding via
           `xm.mark_step` to free up the memory of the full parameters.
@@ -286,6 +290,7 @@ class XlaFullyShardedDataParallel(nn.Module):
       reshard_after_forward: bool = True,
       flatten_parameters: bool = False,
       opt_flatten_overlap: bool = False,
+      sync_module_states: bool = False,
       execute_sharding_on_init: bool = True,
       optimization_barrier_in_forward: bool = True,
       optimization_barrier_in_backward: bool = True,
@@ -310,6 +315,7 @@ class XlaFullyShardedDataParallel(nn.Module):
       _debug_print: bool = False,
       _debug_dummy_all_gather_op: bool = False,
       _debug_dummy_all_reduce_op: bool = False,
+      _debug_dummy_collective_broadcast_op: bool = False,
       _debug_dummy_reduce_scatter_op: bool = False,
       _debug_dummy_optimization_barrier_op: bool = False,
   ):
@@ -347,6 +353,8 @@ class XlaFullyShardedDataParallel(nn.Module):
       fsdp_kwargs = dict(
           reshard_after_forward=reshard_after_forward,
           flatten_parameters=flatten_parameters,
+          opt_flatten_overlap=opt_flatten_overlap,
+          sync_module_states=sync_module_states,
           execute_sharding_on_init=execute_sharding_on_init,
           optimization_barrier_in_forward=optimization_barrier_in_forward,
           optimization_barrier_in_backward=optimization_barrier_in_backward,
@@ -363,7 +371,6 @@ class XlaFullyShardedDataParallel(nn.Module):
           # `auto_wrap_policy` doesn't need to be specified in auto-wrapping
           # `auto_wrapper_callable`` doesn't need to be specified in auto-wrapping
           param_init_fn=param_init_fn,
-          opt_flatten_overlap=opt_flatten_overlap,
           _shard_size_multiple=_shard_size_multiple,
           _use_xla_patched_linear=_use_xla_patched_linear,
           _debug_dummy_forward_pass=_debug_dummy_forward_pass,
@@ -371,6 +378,7 @@ class XlaFullyShardedDataParallel(nn.Module):
           _debug_print=_debug_print,
           _debug_dummy_all_gather_op=_debug_dummy_all_gather_op,
           _debug_dummy_all_reduce_op=_debug_dummy_all_reduce_op,
+          _debug_dummy_collective_broadcast_op=_debug_dummy_collective_broadcast_op,
           _debug_dummy_reduce_scatter_op=_debug_dummy_reduce_scatter_op,
           _debug_dummy_optimization_barrier_op=_debug_dummy_optimization_barrier_op,
       )
@@ -420,6 +428,11 @@ class XlaFullyShardedDataParallel(nn.Module):
     else:
       self.all_reduce_op = functools.partial(
           xm.all_reduce, pin_layout=pin_layout_in_collective_ops)
+    if _debug_dummy_collective_broadcast_op:
+      self.collective_broadcast_op = lambda *args: None
+    else:
+      self.collective_broadcast_op = functools.partial(
+          xm.collective_broadcast, pin_layout=pin_layout_in_collective_ops)
     if _debug_dummy_reduce_scatter_op:
       self.reduce_scatter_op = dummy_reduce_scatter
     else:
@@ -468,6 +481,10 @@ class XlaFullyShardedDataParallel(nn.Module):
         param_init_fn,
         [],  # TODO: ignored_params is set to empty now, pass in correct params when this feature is fully enabled
         deferred_init_check_fn=lambda k: not isinstance(k, XlaFullyShardedDataParallel))
+
+    if sync_module_states:
+      module = module.to(xm.xla_device())
+      self._sync_module_states_(module)
 
     # Only handle params which are not already sharded. This enables
     # sharding individual layers of a Module, with an outer wrapper to
@@ -632,6 +649,33 @@ class XlaFullyShardedDataParallel(nn.Module):
       p.grad.detach().mul_(clip_coef)
 
     return total_norm
+
+  @torch.no_grad()
+  def _sync_module_states_(self, root_module) -> None:
+    """
+    Synchronize module states (i.e. parameters ``params`` and all
+    not-yet-synced buffers) by broadcasting from rank 0 to all ranks.
+    """
+    memo = set()
+    for module in root_module.modules():
+      if module is not root_module and isinstance(module,
+                                                  XlaFullyShardedDataParallel):
+        continue
+      elif module not in memo:
+        memo.add(module)
+        parameters_and_buffers = list(
+            chain(
+                module.parameters(recurse=False),
+                module.buffers(recurse=False)))
+        if len(parameters_and_buffers) == 0:
+          continue
+        # Since broadcast employs all-reduce, here we only need to ensure that root_ordinal
+        # is different from xm.get_ordinal() on the non-root nodes
+        root_ordinal = xm.get_ordinal() if self.rank == 0 else -1
+        self.collective_broadcast_op(
+            parameters_and_buffers,
+            root_ordinal=root_ordinal,
+            groups=self.sharding_groups)
 
   @torch.no_grad()
   def _shard_parameters_(self, params_to_shard) -> None:
