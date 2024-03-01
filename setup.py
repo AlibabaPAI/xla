@@ -259,6 +259,12 @@ class BuildBazelExtension(build_ext.build_ext):
         os.path.join(bazel_bin_path, disc_ral_so_name),
         '/'.join([ext_dest_dir, disc_ral_so_name]))
 
+    disc_customop_so_name = 'libdisc_custom_ops.so'
+    bazel_bin_path = 'build/temp.linux-x86_64-cpython-310/bazel-bin/external/disc_compiler'
+    shutil.copyfile(
+        os.path.join(bazel_bin_path, disc_customop_so_name),
+        '/'.join([ext_dest_dir, disc_customop_so_name]))
+
 
 class Develop(develop.develop):
 

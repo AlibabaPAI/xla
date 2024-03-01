@@ -12,18 +12,25 @@ load(
 
 ptxla_cc_library(
     name = "disc_ral",
-    srcs = ["disc_ral.cc"],
+    srcs = [
+        "disc_ral.cc",
+        "custom_call_flash_attention_forward.cc",
+        "custom_call_flash_attention_backward.cc"
+    ],
     hdrs = [
         "disc_ral.h",
     ],
     deps = [
         ":disc_utils",
         "@disc_compiler//:disc_ral_cuda",
+        "@disc_compiler//:disc_custom_op",
         "@disc_compiler//:headers",
         "@local_config_cuda//cuda:cuda_headers",
         "@torch//:libc10",
         "@torch//:libc10_cuda",
         "@torch//:libtorch_cuda",
+        "@flash_attn//:headers",
+        "@flash_attn//:flash_attn_cuda",
     ],
     copts = [
         "-DGOOGLE_CUDA",
