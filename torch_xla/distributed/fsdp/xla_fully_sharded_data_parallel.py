@@ -724,8 +724,6 @@ class XlaFullyShardedDataParallel(nn.Module):
     full_params = []
     for module_name, m in self.named_modules():
       for n, p in m.named_parameters(recurse=False):
-        if p.dtype != torch.float32:
-          raise TypeError("only fp32 parameters are supported")
         if p in params_to_shard_set:
           if p in shared_full_param_memo:
             mname, shared_m, shared_n = shared_full_param_memo[p]
@@ -1309,7 +1307,7 @@ class XlaFullyShardedDataParallel(nn.Module):
           shard_count=self.world_size,
           groups=self.sharding_groups)
       if reduced_grad.dtype != torch.float32:
-        reduced_grad = reduced_grad.to(torch.float32)
+        reduced_grad = reduced_grad.to(param.dtype)
       if self.optimization_barrier_in_backward:
         self.optimization_barrier_op([reduced_grad])
       if self.gradient_postdivide_factor > 1:
