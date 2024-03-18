@@ -2992,11 +2992,13 @@ XLATensorPtr upsample_bilinear2d(const XLATensorPtr& input,
 XLATensorPtr upsample_bilinear2d_backward(const XLATensorPtr& grad_output,
                                           std::vector<int64_t> output_size,
                                           std::vector<int64_t> input_size,
-                                          bool align_corners) {
+                                          bool align_corners,
+                                          c10::optional<double> scales_h,
+                                          c10::optional<double> scales_w) {
   return grad_output->CreateFrom(
       torch::lazy::MakeNode<UpsampleBilinearBackward>(
           grad_output->GetIrValue(), std::move(output_size),
-          std::move(input_size), align_corners));
+          std::move(input_size), align_corners, scales_h, scales_w));
 }
 
 XLATensorPtr upsample_nearest2d(const XLATensorPtr& input,

@@ -11,7 +11,9 @@ class UpsampleBilinearBackward : public XlaNode {
  public:
   UpsampleBilinearBackward(const torch::lazy::Value& input,
                            std::vector<int64_t> output_size,
-                           std::vector<int64_t> input_size, bool align_corners);
+                           std::vector<int64_t> input_size, bool align_corners,
+                           c10::optional<double> scales_h,
+                           c10::optional<double> scales_w);
 
   torch::lazy::NodePtr Clone(torch::lazy::OpList operands) const override;
 
@@ -29,6 +31,8 @@ class UpsampleBilinearBackward : public XlaNode {
   std::vector<int64_t> output_size_;
   std::vector<int64_t> input_size_;
   bool align_corners_;
+  c10::optional<double> scales_h_;
+  c10::optional<double> scales_w_;
 };
 
 }  // namespace torch_xla
