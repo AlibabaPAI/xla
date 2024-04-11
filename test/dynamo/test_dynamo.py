@@ -7,6 +7,7 @@ import torch_xla.core.xla_model as xm
 import torch_xla.utils.utils as xu
 import torch_xla.debug.metrics as met
 from torch_xla import runtime as xr
+import torch_xla.debug.profiler as xp
 import torch.optim as optim
 import torch.nn as nn
 import torch._dynamo as dynamo
@@ -59,6 +60,50 @@ class DynamRandomOpTest(unittest.TestCase):
     dynamo_res_3 = dynamo_random_op(t)
     self.assertFalse(torch.allclose(dynamo_res_1, dynamo_res_2))
     self.assertFalse(torch.allclose(dynamo_res_2, dynamo_res_3))
+
+
+class DynamoLTCInteractionTest(unittest.TestCase):
+
+  def index_copy_inplace(self, cache, update_indices, xk):
+    cache.index_copy_(0, update_indices, xk)
+
+  def test_mark_step_after_dynamo(self):
+    cache_len = 512
+    kv_heads = 8
+    head_dim = 128
+    running = 16
+
+    device = xm.xla_device()
+    cache = torch.rand((cache_len, kv_heads, head_dim)).to(device)
+    update_indices = torch.randint(
+        0, cache_len, (running,), dtype=torch.long).to(device)
+    xk = torch.rand((running, kv_heads, head_dim)).to(device)
+
+    dynamo_index_copy_inplace = torch.compile(
+        self.index_copy_inplace, backend="openxla", fullgraph=True)
+    met.clear_all()
+    for i in range(10):
+      dynamo_index_copy_inplace(cache, update_indices, xk)
+      xm.wait_device_ops()
+      current_execute_time = met.metric_data('ExecuteTime')[0]
+      # This mark_step should be a no-op and don't trigger additional execution.
+      xm.mark_step()
+      xm.wait_device_ops()
+      self.assertEqual(current_execute_time, met.metric_data('ExecuteTime')[0])
+
+
+class DynamoProfilerTest(unittest.TestCase):
+
+  def dummy_fn(self, a):
+    return torch.sin(a) + a
+
+  def test_dynamo_with_trace(self):
+    dynamo_dummy = torch.compile(
+        self.dummy_fn, backend="openxla", fullgraph=True)
+    t = torch.randn(2, 3, 4, device=xm.xla_device())
+    for i in range(10):
+      with xp.Trace('build_graph'):
+        t = dynamo_dummy(t)
 
 
 class DynamoInferenceBasicTest(unittest.TestCase):
