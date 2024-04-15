@@ -150,7 +150,8 @@ xla::XlaOp BuildCdistForward(xla::XlaOp x1, xla::XlaOp x2, xla::XlaOp p,
 
 xla::XlaOp BuildUpperTriangle(xla::XlaOp input);
 
-xla::XlaOp BuildCustomSharding(const xla::XlaOp& input);
+xla::XlaOp BuildCustomSharding(const xla::XlaOp& input, const std::string& type,
+                               const xla::Shape& output_shape);
 
 xla::XlaOp BuildTpuCustomCall(const std::vector<xla::XlaOp>& inputs,
                               const xla::Shape& output_shape,
