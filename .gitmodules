@@ -1,0 +1,3 @@
+[submodule "third_party/openxla"]
+	path = third_party/openxla
+	url = git@github.com:AlibabaPAI/openxla.git
