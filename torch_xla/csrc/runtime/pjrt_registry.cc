@@ -141,9 +141,7 @@ InitializePjRt(const std::string& device_type) {
                << sys_util::GetEnvString("LOCAL_WORLD_SIZE", "")
                << ", WORLD_SIZE=" << sys_util::GetEnvString("WORLD_SIZE", "");
     std::optional<std::set<int>> allowed_devices;
-    if (local_world_size > 1) {
-      allowed_devices = std::set{local_process_rank};
-    }
+    allowed_devices = std::set{local_process_rank};
 
     std::shared_ptr<xla::KeyValueStoreInterface> kv_store;
     if (global_world_size > 1) {
