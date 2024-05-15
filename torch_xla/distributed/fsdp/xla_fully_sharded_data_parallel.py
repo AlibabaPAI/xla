@@ -480,7 +480,8 @@ class XlaFullyShardedDataParallel(nn.Module):
         module,
         param_init_fn,
         [],  # TODO: ignored_params is set to empty now, pass in correct params when this feature is fully enabled
-        deferred_init_check_fn=lambda k: not isinstance(k, XlaFullyShardedDataParallel))
+        deferred_init_check_fn=lambda k: not isinstance(
+            k, XlaFullyShardedDataParallel))
 
     if sync_module_states:
       module = module.to(xm.xla_device())

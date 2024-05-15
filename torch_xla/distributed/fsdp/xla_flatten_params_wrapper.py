@@ -66,7 +66,7 @@ class FlatParameter(nn.Parameter):
 
     if len(params) == 1 and params[0].dim() == 1:
       ret = super(FlatParameter, cls).__new__(
-        cls, params[0], requires_grad=requires_grad)
+          cls, params[0], requires_grad=requires_grad)
       torch_xla._XLAC._replace_xla_tensor(params[0], params[0].new_zeros(1))
       return ret
 
@@ -428,7 +428,8 @@ class XlaFlattenParamsWrapper(nn.Module):
 
     for (_, _, m, n, shared_m, shared_n) in self._shared_param_infos:
       if hasattr(m, n):
-        torch_xla._XLAC._replace_xla_tensor(getattr(m, n), getattr(shared_m, shared_n))
+        torch_xla._XLAC._replace_xla_tensor(
+            getattr(m, n), getattr(shared_m, shared_n))
       else:
         setattr(m, n, getattr(shared_m, shared_n))
 
