@@ -1222,6 +1222,13 @@ std::vector<size_t> XLAGraphExecutor::SetBufferDonors(
     LoweringContext* lowering_ctx) {
   std::unordered_map<int64_t, size_t> output_tensor_id_map;
   std::vector<size_t> buffer_donor_indexs;
+  // OpenXLA attempts to reuse as many as parameter buffers that are marked as
+  // donor buffer. However, during the BufferInsertion pass, too many copy
+  // operations may be inserted, potentially causing excessive peak memory
+  // usage. To mitigate this, we introduce a flag here to switch back to
+  // using SetupAlias.
+  static const bool using_buffer_donor =
+      runtime::sys_util::GetEnvBool("XLA_USING_BUFFER_DONOR", true);
   // tensors[indices] represent all tensors that needs to be updated after
   // the execution. We can only alias the current buffer of these tensors
   // since those buffers are no longer needed after execution.
@@ -1242,8 +1249,14 @@ std::vector<size_t> XLAGraphExecutor::SetBufferDonors(
       // this buffer is not needed after execution since XLATensor will get a
       // new buffer.
       if (it != output_tensor_id_map.end()) {
-        lowering_ctx->builder()->AddBufferDonor(/*param_number=*/i,
-                                                /*param_index=*/{});
+        if (using_buffer_donor) {
+          lowering_ctx->builder()->AddBufferDonor(/*param_number=*/i,
+                                                  /*param_index=*/{});
+        } else {
+          lowering_ctx->builder()->SetUpAlias(
+              {/*output_index=*/static_cast<int64_t>(it->second)},
+              /*param_number=*/i, /*param_index=*/{});
+        }
         buffer_donor_indexs.push_back(i);
       }
     }
