@@ -27,6 +27,7 @@ namespace tao {
 namespace ral {
 
 DEFINE_TAO_TYPE_NAME_HELPER(Eigen::half, "f16");
+DEFINE_TAO_TYPE_NAME_HELPER(Eigen::bfloat16, "bf16");
 
 struct FlashAttentionBackwardParams {
   using index_t = uint32_t;
@@ -235,6 +236,7 @@ custom_call_flash_attention_backward(
   memset(&launch_params, 0, sizeof(launch_params));
 
   launch_params.is_bf16 = params.is_bf16;
+  launch_params.is_bf16 = true;
 
   // Set the pointers and strides.
   launch_params.q_ptr = q.data;
@@ -380,6 +382,8 @@ TAO_RAL_API("custom_call_flash_attention_backward", "gpu",
             custom_call_flash_attention_backward<float, float, 3>);
 TAO_RAL_API("custom_call_flash_attention_backward", "gpu",
             custom_call_flash_attention_backward<Eigen::half, float, 3>);
+TAO_RAL_API("custom_call_flash_attention_backward", "gpu",
+            custom_call_flash_attention_backward<Eigen::bfloat16, float, 3>);
 
 }  // namespace ral
 }  // namespace tao

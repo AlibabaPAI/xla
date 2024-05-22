@@ -3,6 +3,7 @@
 #include <ATen/ScalarOps.h>
 #include <ATen/Tensor.h>
 #include <ATen/core/Tensor.h>
+#include <ATen/cuda/CUDAContext.h>
 #include <torch/cuda.h>
 
 #include <vector>
@@ -18,6 +19,11 @@
 #include "torch_xla/csrc/runtime/disc/disc_compile.h"
 #include "torch_xla/csrc/runtime/stablehlo_helper.h"
 #include "torch_xla/csrc/runtime/sys_util.h"
+#include "xla/hlo/ir/hlo_module.h"
+#include "xla/service/float_normalization.h"
+#include "xla/service/gpu/gpu_float_support.h"
+#include "xla/service/hlo_pass_pipeline.h"
+#include "xla/service/hlo_proto_util.h"
 
 namespace torch_xla {
 namespace runtime {
@@ -172,10 +178,44 @@ std::vector<ComputationClient::ComputationPtr> DISCComputationClient::Compile(
     mlir::MLIRContext context;
     mlir::ModuleOp mlir_module =
         mlir::ModuleOp::create(mlir::UnknownLoc::get(&context));
-    auto status = torch_xla::ConvertHloToMhlo(
-        instance.computation.mutable_proto(), &mlir_module);
-    XLA_CHECK(status.ok()) << "StableHLO -> MHLO conversion failed.\n"
-                           << status.message();
+
+    auto hlo_proto = instance.computation.proto();
+    auto program_shape = instance.computation.GetProgramShape().value();
+    xla::HloModuleConfig module_config(program_shape);
+    module_config.set_debug_options(xla::GetDebugOptionsFromFlags());
+    xla::ComputationLayout* entry_layout =
+        module_config.mutable_entry_computation_layout();
+    for (int64_t i = 0; i < entry_layout->parameter_count(); ++i) {
+      auto status =
+          entry_layout->mutable_parameter_layout(i)->CopyLayoutFromShape(
+              program_shape.parameters(i));
+      if (!status.ok()) {
+        XLA_ERROR() << "Error copying layout from shape: ";
+        return {};
+      }
+    }
+
+    std::unique_ptr<xla::HloModule> hlo_module =
+        xla::CreateModuleFromProto(hlo_proto, module_config).value();
+    xla::HloPassPipeline pipeline("pre-stablehlo");
+    stream_executor::CudaComputeCapability gpu_version;
+    auto dprops = at::cuda::getCurrentDeviceProperties();
+    gpu_version.major = dprops->major;
+    gpu_version.minor = dprops->minor;
+    xla::gpu::GpuFloatSupport bf16_support(gpu_version, xla::BF16);
+    pipeline.AddPass<xla::FloatNormalization>(&bf16_support);
+    auto status = pipeline.Run(hlo_module.get()).status();
+    if (!status.ok()) {
+      XLA_ERROR() << "Error running pre-stablehlo pass pipeline: ";
+      return {};
+    }
+    {
+      auto mutable_hlo_proto = hlo_module->ToProto();
+      auto status =
+          torch_xla::ConvertHloToMhlo(&mutable_hlo_proto, &mlir_module);
+      XLA_CHECK(status.ok()) << "StableHLO -> MHLO conversion failed.\n"
+                             << status.message();
+    }
 
     // Add input and output attributes
     auto entry_func_identifier =

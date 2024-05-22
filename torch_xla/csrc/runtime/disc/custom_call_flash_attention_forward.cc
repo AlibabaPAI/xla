@@ -245,6 +245,8 @@ TAO_RAL_API("custom_call_flash_attention_forward", "gpu",
             custom_call_flash_attention_forward<float, float, 3>);
 TAO_RAL_API("custom_call_flash_attention_forward", "gpu",
             custom_call_flash_attention_forward<Eigen::half, float, 3>);
+TAO_RAL_API("custom_call_flash_attention_forward", "gpu",
+            custom_call_flash_attention_forward<bfloat16, float, 3>);
 
 }  // namespace ral
 }  // namespace tao

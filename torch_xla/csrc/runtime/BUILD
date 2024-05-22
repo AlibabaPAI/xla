@@ -167,6 +167,8 @@ cc_library(
     "@xla//xla/client:xla_computation",
     "//torch_xla/csrc/runtime/disc:disc_ral",
     "//torch_xla/csrc/runtime/disc:disc_compile",
+    "@xla//xla/service:float_normalization",
+    "@xla//xla/service/gpu:gpu_float_support",
   ],
 )
 
