@@ -54,6 +54,10 @@ class IfrtComputationClient : public ComputationClient {
   std::vector<xla::Literal> TransferFromDevice(
       absl::Span<const DataPtr> handles) override;
 
+  std::uintptr_t UnsafeBufferPointer(const DataPtr handle) override;
+
+  std::shared_ptr<xla::PjRtBuffer> GetPjRtBuffer(const DataPtr handle) override;
+
   DataPtr TransferShardsToDevice(
       absl::Span<const std::shared_ptr<const TensorSource>> tensor_shards,
       std::string device, xla::Shape shape, xla::OpSharding sharding) override;
@@ -81,6 +85,15 @@ class IfrtComputationClient : public ComputationClient {
     return torch_xla::DeviceType(
         absl::AsciiStrToUpper(client_->platform_name()));
   };
+
+  xla::PjRtPlatformId GetPlatformID() const override {
+    return client_->platform_id();
+  }
+
+  absl::StatusOr<xla::PjRtDevice*> LookupAddressableDevice(
+      int local_device_id) const override {
+    XLA_ERROR() << __FUNCTION__ << " not implemented";
+  }
 
   std::vector<std::string> GetLocalDevices() const override;
 
@@ -118,6 +131,10 @@ class IfrtComputationClient : public ComputationClient {
   MemoryInfo GetMemoryInfo(const std::string& device) override {
     XLA_ERROR() << __FUNCTION__ << " not implemented";
   };
+
+  std::string PjRtDeviceToString(xla::PjRtDevice* const device) const override {
+    XLA_ERROR() << __FUNCTION__ << " not implemented";
+  }
 
   std::string SerializeComputation(const ComputationPtr computation) override {
     XLA_ERROR() << __FUNCTION__ << " not implemented";
