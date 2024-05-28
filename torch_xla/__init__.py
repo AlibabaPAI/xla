@@ -176,8 +176,13 @@ def _init_xla_lazy_backend():
 
 
 atexit.register(_prepare_to_exit)
-_apply_patches()
-_init_xla_lazy_backend()
+
+# This environment is from transformers, when it is set to '0', it means
+# run a native pytorch job in an environment with TorchXLA installed, so we
+# do not need apply patches and init xla backend to avoid extra memory usage.
+if os.getenv('USE_TORCH_XLA', '1').upper() in ['ON', '1', 'YES', 'TRUE', 'Y']:
+  _apply_patches()
+  _init_xla_lazy_backend()
 
 # This is to temporarily disable the automtic dynamic shape in PyTorch Dynamo,
 # which was enabled by https://github.com/pytorch/pytorch/pull/103623.
