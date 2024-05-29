@@ -41,8 +41,10 @@ from ._init_utils import _materialize_module
 
 import os
 
-XLA_DISABLE_FUNCTIONALIZATION = bool(
-    os.environ.get('XLA_DISABLE_FUNCTIONALIZATION', False))
+if os.getenv('XLA_DISABLE_FUNCTIONALIZATION', '0').upper() in ['1', 'TRUE']:
+  XLA_DISABLE_FUNCTIONALIZATION = True
+else:
+  XLA_DISABLE_FUNCTIONALIZATION = False
 
 FLOAT_DTYPES = [torch.float32, torch.float16, torch.bfloat16]
 
