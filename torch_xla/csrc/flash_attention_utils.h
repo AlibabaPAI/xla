@@ -38,6 +38,7 @@ struct FlashAttentionForwardParams : public FlashAttentionBaseParams {
   // The dimensions.
   int b, seqlen_q, seqlen_k, d, seqlen_q_rounded, seqlen_k_rounded, d_rounded;
 
+  int total_q;
   int total_k;
 
   // The scaling factors for the kernel.
@@ -54,6 +55,12 @@ struct FlashAttentionForwardParams : public FlashAttentionBaseParams {
 
   bool is_bf16;
   bool is_causal;
+  int window_size_left;
+  int window_size_right;
+  int alibi_slopes_batch_stride;
+  bool enable_alibi_slopes;
+  bool is_seqlens_k_cumulative;
+  int num_splits;
 
   virtual std::string ToString() const override;
   virtual void FromString(const std::string& str) override;
@@ -73,41 +80,52 @@ struct FlashAttentionBackwardParams : public FlashAttentionForwardParams {
   index_t dk_head_stride;
   index_t dv_head_stride;
 
+  bool deterministic;
+
   std::string ToString() const override;
   void FromString(const std::string& str) override;
 };
 
-void set_forward_params(FlashAttentionForwardParams& params, const size_t b,
-                        const size_t seqlen_q, const size_t seqlen_k,
-                        const size_t h, const size_t d, const at::Tensor& q,
-                        const at::Tensor& k, const at::Tensor& v,
-                        float p_dropout, float softmax_scale, bool is_causal,
-                        int num_splits);
+void set_forward_params(
+    FlashAttentionForwardParams& params, const size_t b, const size_t seqlen_q,
+    const size_t seqlen_k, const size_t seqlen_q_rounded,
+    const size_t seqlen_k_rounded, const size_t h, const size_t h_k,
+    const size_t d, const size_t d_rounded, const size_t total_q,
+    const size_t total_k, const at::Tensor& q, const at::Tensor& k,
+    const at::Tensor& v, void* cu_seqlens_q_d, float p_dropout,
+    float softmax_scale, bool is_causal, int window_size_left,
+    int window_size_right, int alibi_slopes_batch_stride,
+    bool enable_alibi_slopes,
+    bool seqlenq_ngroups_swapped =
+        false /*TODO(wenting.swt): support max_seqlen_q==1*/);
 
-void set_backward_params(FlashAttentionForwardParams& params, const size_t b,
-                         const size_t seqlen_q, const size_t seqlen_k,
-                         const size_t seqlen_q_rounded,
-                         const size_t seqlen_k_rounded, const size_t h,
-                         const size_t h_k, const size_t d,
-                         const size_t d_rounded, const size_t total_k,
-                         const at::Tensor& q, const at::Tensor& k,
-                         const at::Tensor& v, const at::Tensor& dout,
-                         void* cu_seqlens_q_d, float p_dropout,
-                         float softmax_scale, bool is_causal);
+void set_backward_params(
+    FlashAttentionBackwardParams& params, const size_t b, const size_t seqlen_q,
+    const size_t seqlen_k, const size_t seqlen_q_rounded,
+    const size_t seqlen_k_rounded, const size_t h, const size_t h_k,
+    const size_t d, const size_t d_rounded, const size_t total_q,
+    const size_t total_k, const at::Tensor& q, const at::Tensor& k,
+    const at::Tensor& v, const at::Tensor& dout, void* cu_seqlens_q_d,
+    float p_dropout, float softmax_scale, bool is_causal, int window_size_left,
+    int window_size_right, bool deterministic, int alibi_slopes_batch_stride,
+    bool enable_alibi_slopes);
 
 FlashAttentionForwardParams get_flash_attention_forward_params(
     const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
     const at::Tensor& cu_seqlens_q, const at::Tensor& cu_seqlens_k,
-    const int max_seqlen_q, const int max_seqlen_k, const float p_dropout,
-    const float softmax_scale, const bool zero_tensors, const bool is_causal,
-    const bool return_softmax);
+    c10::optional<at::Tensor>& alibi_slopes_, const int max_seqlen_q,
+    const int max_seqlen_k, const float p_dropout, const float softmax_scale,
+    const bool zero_tensors, const bool is_causal, int window_size_left,
+    int window_size_right, const bool return_softmax);
 
 FlashAttentionBackwardParams get_flash_attention_backward_params(
     const at::Tensor& dout, const at::Tensor& q, const at::Tensor& k,
     const at::Tensor& v, const at::Tensor& out, const at::Tensor& softmax_lse,
     const at::Tensor& cu_seqlens_q, const at::Tensor& cu_seqlens_k,
-    const int max_seqlen_q, const int max_seqlen_k, const float p_dropout,
-    const float softmax_scale, const bool zero_tensors, const bool is_causal);
+    c10::optional<at::Tensor>& alibi_slopes_, const int max_seqlen_q,
+    const int max_seqlen_k, const float p_dropout, const float softmax_scale,
+    const bool zero_tensors, const bool is_causal, int window_size_left,
+    int window_size_right, const bool deterministic);
 
 }  // namespace torch_xla
 #endif  // XLA_TORCH_XLA_CSRC_FLASH_ATTENTION_UTILS_H
