@@ -40,11 +40,11 @@ xla::XlaOp TokenHandler::GetInput(xla::XlaOp input,
     return input;
   }
 
-  if (input_shape == nullptr) {
-    input_shape = &ShapeHelper::ShapeOfXlaOp(input);
-  }
-  // Token is always a numeric zero, so adding to input does not change input.
-  return input + MaybeConvertTo(token_, input_shape->element_type());
+  xla::XlaOp tuple_input = xla::Tuple(input.builder(), {input, token_});
+  xla::XlaOp tuple_output = xla::OptimizationBarrier(tuple_input);
+  token_ = xla::GetTupleElement(tuple_output, 1);
+
+  return xla::GetTupleElement(tuple_output, 0);
 }
 
 xla::XlaOp TokenHandler::GetNewToken(xla::XlaOp result) {
@@ -54,11 +54,10 @@ xla::XlaOp TokenHandler::GetNewToken(xla::XlaOp result) {
     return token_;
   }
 
-  xla::XlaOp slice = SliceOneToken(result);
-  // Token is always a numeric zero, and multiplying it for one element of the
-  // result will still leave it as zero.
-  token_ = token_ * MaybeConvertTo(slice, XlaHelpers::TypeOfXlaOp(token_));
-  return token_;
+  xla::XlaOp tuple_input = xla::Tuple(result.builder(), {result, token_});
+  xla::XlaOp tuple_output = xla::OptimizationBarrier(tuple_input);
+
+  return xla::GetTupleElement(tuple_output, 1);
 }
 
 }  // namespace torch_xla
