@@ -40,24 +40,28 @@ xla::XlaOp TokenHandler::GetInput(xla::XlaOp input,
     return input;
   }
 
-  xla::XlaOp tuple_input = xla::Tuple(input.builder(), {input, token_});
-  xla::XlaOp tuple_output = xla::OptimizationBarrier(tuple_input);
-  token_ = xla::GetTupleElement(tuple_output, 1);
-
-  return xla::GetTupleElement(tuple_output, 0);
+  if (input_shape == nullptr) {
+    input_shape = &ShapeHelper::ShapeOfXlaOp(input);
+  }
+  // Token is always a numeric zero, so adding to input does not change input.
+  return input + MaybeConvertTo(token_, input_shape->element_type());
 }
 
-xla::XlaOp TokenHandler::GetNewToken(xla::XlaOp result) {
+xla::XlaOp TokenHandler::GetNewOutput(xla::XlaOp result) {
   static bool disable_numeric_token =
       runtime::sys_util::GetEnvBool("DISABLE_NUMERIC_CC_TOKEN", false);
   if (disable_numeric_token) {
-    return token_;
+    return result;
   }
 
   xla::XlaOp tuple_input = xla::Tuple(result.builder(), {result, token_});
   xla::XlaOp tuple_output = xla::OptimizationBarrier(tuple_input);
 
-  return xla::GetTupleElement(tuple_output, 1);
+  token_ = xla::GetTupleElement(tuple_output, 1);
+
+  return xla::GetTupleElement(tuple_output, 0);
 }
+
+xla::XlaOp TokenHandler::GetNewToken() { return token_; }
 
 }  // namespace torch_xla

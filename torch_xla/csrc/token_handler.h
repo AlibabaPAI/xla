@@ -10,8 +10,8 @@ class TokenHandler {
   explicit TokenHandler(xla::XlaOp token) : token_(token) {}
 
   xla::XlaOp GetInput(xla::XlaOp input, const xla::Shape* input_shape);
-
-  xla::XlaOp GetNewToken(xla::XlaOp result);
+  xla::XlaOp GetNewOutput(xla::XlaOp result);
+  xla::XlaOp GetNewToken();
 
  private:
   xla::XlaOp token_;

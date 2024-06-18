@@ -207,7 +207,8 @@ AllToAllResult BuildAllToAll(xla::XlaOp input, xla::XlaOp token,
                                   split_dimension, concat_dimension,
                                   split_count, reduce_groups);
   }
-  return {reduce_result, token_handler.GetNewToken(reduce_result)};
+  return {token_handler.GetNewOutput(reduce_result),
+          token_handler.GetNewToken()};
 }
 
 AllGatherResult BuildAllGather(xla::XlaOp input, xla::XlaOp token, int64_t dim,
@@ -233,7 +234,8 @@ AllGatherResult BuildAllGather(xla::XlaOp input, xla::XlaOp token, int64_t dim,
         xla::AllGather(token_handler.GetInput(input, &input_shape), dim,
                        shard_count, reduce_groups);
   }
-  return {all_gather_result, token_handler.GetNewToken(all_gather_result)};
+  return {token_handler.GetNewOutput(all_gather_result),
+          token_handler.GetNewToken()};
 }
 
 AllGatherResultCoalesced BuildAllGatherCoalesced(
@@ -272,7 +274,8 @@ AllGatherResultCoalesced BuildAllGatherCoalesced(
       result[0] = all_gather_result;
     }
   }
-  return {result, token_handler.GetNewToken(result[0])};
+  result[0] = token_handler.GetNewOutput(result[0]);
+  return {result, token_handler.GetNewToken()};
 }
 
 CollectivePermuteResult BuildCollectivePermute(
@@ -285,7 +288,7 @@ CollectivePermuteResult BuildCollectivePermute(
   // things will break.
   xla::XlaOp result = xla::CollectivePermute(
       token_handler.GetInput(input, &input_shape), source_target_pairs);
-  return {result, token_handler.GetNewToken(result)};
+  return {token_handler.GetNewOutput(result), token_handler.GetNewToken()};
 }
 
 SendResult BuildSendWithToken(xla::XlaOp input, xla::XlaOp token,
@@ -345,7 +348,8 @@ ReduceScatterResult BuildReduceScatter(
     reduce_result = reduce_result * scaling_value;
   }
 
-  return {reduce_result, token_handler.GetNewToken(reduce_result)};
+  return {token_handler.GetNewOutput(reduce_result),
+          token_handler.GetNewToken()};
 }
 
 ReduceScatterResultCoalesced BuildReduceScatterCoalesced(
@@ -393,7 +397,8 @@ ReduceScatterResultCoalesced BuildReduceScatterCoalesced(
       result[op_idx] = gte;
     }
   }
-  return {result, token_handler.GetNewToken(result[0])};
+  result[0] = token_handler.GetNewOutput(result[0]);
+  return {result, token_handler.GetNewToken()};
 }
 
 std::vector<torch::lazy::Value> GetOperandListWithToken(
