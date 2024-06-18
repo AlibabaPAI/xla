@@ -196,13 +196,20 @@ class AutogradFunction(torch.autograd.Function):
     ctx.outputs = []
     ctx.output_tensor_indices = []
     tensor_outputs = []
-    for i, out in enumerate(outputs):
-      if torch.is_tensor(out):
-        tensor_outputs.append(out)
-        ctx.output_tensor_indices.append(i)
-        ctx.outputs.append(None)
-      else:
-        ctx.outputs.append(out)
+    if torch.is_tensor(outputs):
+      tensor_outputs = [outputs]
+      ctx.output_tensor_indices = [0]
+      ctx.outputs = [None]
+    else:
+      assert isinstance(outputs,
+                        (list, tuple)), "Only support for tuple or list output"
+      for i, out in enumerate(outputs):
+        if torch.is_tensor(out):
+          tensor_outputs.append(out)
+          ctx.output_tensor_indices.append(i)
+          ctx.outputs.append(None)
+        else:
+          ctx.outputs.append(out)
 
     ctx.save_for_backward(*(tensor_inputs + tensor_outputs))
     outputs = _apply_to_tensors(lambda t: t.clone().detach(), outputs)
