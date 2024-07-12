@@ -410,6 +410,8 @@ symint:
   - view_copy
   - diagonal_backward
   - narrow_copy
+  - full
+  - slice_backward
   - select_backward
   - select.int
   # See Note: [Disabling functionalization]
