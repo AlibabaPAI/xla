@@ -133,10 +133,13 @@ void XLATensorImpl::shallow_copy_from(
 }
 
 at::IntArrayRef XLATensorImpl::sizes_custom() const {
-  XLA_CHECK(!has_symbolic_sizes_strides_)
-      << "Cannot call sizes_custom() on an XLA tensor with symbolic "
-         "sizes/strides";
+  // XLA_CHECK(!has_symbolic_sizes_strides_)
+  //     << "Cannot call sizes_custom() on an XLA tensor with symbolic "
+  //        "sizes/strides";
   const_cast<XLATensorImpl*>(this)->SetupSizeProperties();
+  if (has_symbolic_sizes_strides_) {
+    return sizes_and_strides_.sizes_arrayref();
+  }
   return sizes_default();
 }
 
@@ -157,7 +160,8 @@ c10::SymInt XLATensorImpl::sym_numel_custom() const {
 
 at::IntArrayRef XLATensorImpl::strides_custom() const {
   const_cast<XLATensorImpl*>(this)->SetupSizeProperties();
-  return strides_default();
+  return sizes_and_strides_.strides_arrayref();
+  // return strides_default();
 }
 
 int64_t XLATensorImpl::dim_custom() const {
@@ -167,6 +171,9 @@ int64_t XLATensorImpl::dim_custom() const {
 
 int64_t XLATensorImpl::numel_custom() const {
   const_cast<XLATensorImpl*>(this)->SetupSizeProperties();
+  if (has_symbolic_sizes_strides_) {
+    return numel_;
+  }
   return numel_default();
 }
 

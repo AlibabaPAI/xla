@@ -166,11 +166,19 @@ class XlaHelpers {
                                          false);
   }
 
+  static bool IsStableHloEnabled() {
+    return runtime::sys_util::GetEnvBool("ENABLE_STABLEHLO",
+                                         false);
+  }
+
   // Creates custom_call to express dynamic reshape op using the dimension
   // sizes of 'aux_input'.
   static xla::XlaOp DynamicUnboundedReshape(
       xla::XlaOp input, xla::XlaOp aux_input,
       absl::Span<const int64_t> output_sizes);
+  
+  static xla::XlaOp DynamicBoundedReshape(
+    xla::XlaOp input, const std::vector<xla::XlaOp>& shape_ops, const xla::Shape& shape);
 
   // Broadcasts 'input' shape to
   // shape(aux_input)[aux_input_dimensions] x shape(input).

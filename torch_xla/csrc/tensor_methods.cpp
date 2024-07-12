@@ -137,6 +137,7 @@
 #include "torch_xla/csrc/ops/var.h"
 #include "torch_xla/csrc/ops/var_mean.h"
 #include "torch_xla/csrc/ops/view.h"
+#include "torch_xla/csrc/ops/view_symint.h"
 #include "torch_xla/csrc/runtime/computation_client.h"
 #include "torch_xla/csrc/runtime/debug_macros.h"
 #include "torch_xla/csrc/runtime/metrics.h"
@@ -850,6 +851,7 @@ void arange_out(XLATensorPtr& out, const at::Scalar& start,
                 const at::Scalar& end, const at::Scalar& step,
                 at::ScalarType scalar_type) {
   out->SetIrValue(ARange(start, end, step, scalar_type));
+  // out->SetIrValue(torch::lazy::MakeNode<Iota>());
   out->SetScalarType(scalar_type);
 }
 
@@ -1305,6 +1307,22 @@ XLATensorPtr embedding_dense_backward(const XLATensorPtr& grad_output,
 XLATensorPtr embedding(const XLATensorPtr& weight,
                        const XLATensorPtr& indices) {
   return tensor_ops::Embedding(weight, indices);
+}
+
+XLATensorPtr embedding_symint(const XLATensorPtr& weight,
+                              const XLATensorPtr& indices,
+                              at::SymIntArrayRef final_size,
+                              at::SymInt indices_numel) {
+  XLA_CHECK_EQ(weight->shape().get().rank(), 2);
+  XLA_CHECK(indices->dtype() == at::kLong || indices->dtype() == at::kInt);
+
+  if (indices->shape().get().rank() == 1) {
+    return index_select(weight, 0, indices);
+  }
+
+  XLATensorPtr embeddings = index_select(
+    weight, 0, view_symint(indices, {indices_numel}));
+  return view_symint(embeddings, final_size);
 }
 
 XLATensorPtr exp(const XLATensorPtr& input) {
@@ -3069,6 +3087,16 @@ XLATensorPtr view_symint(const XLATensorPtr& input,
   SymIntElements size_elements(sym_size);
   std::vector<int64_t> complete_dimensions = GetCompleteShape(
       size_elements.GetUpperBounds(), input_shape.get().dimensions());
+  // auto dynamic_dims = size_elements.GetDynamicDims();
+  // c10::optional<at::IntArrayRef> int_shape = c10::asIntArrayRefSlowOpt(sym_size);
+  // bool input_shape_static = int_shape.has_value();
+  // if (input_shape_static) {
+  //   for (int i = 0; i < int_shape.value().size(); i++) {
+  //     if (int_shape.value()[i] == -1) {
+  //       dynamic_dims[i] = true;
+  //     }
+  //   }
+  // }
   xla::Shape result_shape = xla::ShapeUtil::MakeShape(
       input_shape.get().element_type(), complete_dimensions,
       size_elements.GetDynamicDims());
@@ -3079,7 +3107,7 @@ XLATensorPtr view_symint(const XLATensorPtr& input,
     return input->CreateViewTensor(std::move(view_info));
   }
   return input->CreateFrom(
-      torch::lazy::MakeNode<ViewOp>(input->GetIrValue(), result_shape));
+      torch::lazy::MakeNode<ViewSymIntOp>(input->GetIrValue(), size_elements, result_shape));
 }
 
 XLATensorPtr view_as_complex_copy(const XLATensorPtr& input) {

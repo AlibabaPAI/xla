@@ -10,6 +10,8 @@
 #include "torch_xla/csrc/runtime/debug_macros.h"
 #include "xla/client/lib/constants.h"
 
+#include "torch_xla/csrc/helpers.h"
+
 namespace torch_xla {
 namespace {
 
@@ -57,6 +59,10 @@ XlaOpVector ExpandSymInt::Lower(LoweringContext* loctx) const {
   std::vector<xla::XlaOp> size_ops;
   for (int i = 1; i < operands().size(); i++) {
     size_ops.push_back(loctx->GetOutputOp(operand(i)));
+  }
+  if (XlaHelpers::IsStableHloEnabled()) {
+    xla::XlaOp output = BuildExpandSymInt(input, upper_bounds_, size_ops, dynamic_dims_);
+    return ReturnOp(output, loctx);
   }
   xla::XlaOp output = SetDimensionSizes(BuildExpand(input, upper_bounds_),
                                         size_ops, dynamic_dims_);

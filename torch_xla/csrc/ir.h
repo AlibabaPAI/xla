@@ -143,6 +143,11 @@ class XlaNode : public torch::lazy::Node {
     unbounded_dynamic_dims_.insert(dim);
   }
 
+  void MarkBoundedDynamicDimension(uint32_t dim, int64_t bound) {
+    xla_shape_.set_dynamic_dimension(dim, true);
+    xla_shape_.set_dimensions(dim, bound);
+  }
+
   const std::unordered_set<uint32_t>& dynamic_dims() const {
     return unbounded_dynamic_dims_;
   }

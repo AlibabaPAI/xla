@@ -378,6 +378,11 @@ XLATensorPtr embedding_dense_backward(const XLATensorPtr& grad_output,
 
 XLATensorPtr embedding(const XLATensorPtr& weight, const XLATensorPtr& indices);
 
+XLATensorPtr embedding_symint(const XLATensorPtr& weight,
+                              const XLATensorPtr& indices,
+                              at::SymIntArrayRef size,
+                              at::SymInt numel);
+
 XLATensorPtr eq(const XLATensorPtr& input, const at::Scalar& other);
 
 XLATensorPtr eq(const XLATensorPtr& input, const XLATensorPtr& other);

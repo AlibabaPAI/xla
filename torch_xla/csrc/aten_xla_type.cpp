@@ -68,7 +68,7 @@ at::Tensor to_meta(const at::Tensor& tensor) {
   // have sizes/strides
   if (!tensor.defined()) return tensor;
   auto out = at::native::empty_strided_meta_symint(
-      tensor.sym_sizes(), tensor.sym_strides(),
+      c10::fromIntArrayRefKnownNonNegative(tensor.sizes()), c10::fromIntArrayRefKnownNonNegative(tensor.strides()),
       /*dtype=*/c10::make_optional(tensor.scalar_type()),
       /*layout=*/c10::make_optional(tensor.layout()),
       /*device=*/c10::make_optional(c10::Device(c10::kMeta)),
@@ -633,10 +633,10 @@ at::Tensor XLANativeFunctions::add(const at::Tensor& self,
   TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::");
   // Currently, we disallow the case when both operands contain dynamic
   // dimensions. This is consistent with PyTorch's behavior.
-  XLA_CHECK(!(tensor_has_dym_dim(self) && tensor_has_dym_dim(other)))
-      << "Both operands of torch.add cannot have dynamic dimensions at the "
-         "same time. This is not "
-         "supported in PyTorch/XLA.";
+  // XLA_CHECK(!(tensor_has_dym_dim(self) && tensor_has_dym_dim(other)))
+  //     << "Both operands of torch.add cannot have dynamic dimensions at the "
+  //        "same time. This is not "
+  //        "supported in PyTorch/XLA.";
 
   at::native::alpha_check(at::result_type(self, other), alpha);
   return DoBinaryOp(self, other,
@@ -1323,7 +1323,25 @@ at::Tensor XLANativeFunctions::fmod(const at::Tensor& self,
                     });
 }
 
-at::Tensor XLANativeFunctions::full(at::IntArrayRef size,
+// at::Tensor XLANativeFunctions::full(at::IntArrayRef size,
+//                                     const at::Scalar& fill_value,
+//                                     c10::optional<at::ScalarType> dtype,
+//                                     c10::optional<at::Layout> layout,
+//                                     c10::optional<at::Device> device,
+//                                     c10::optional<bool> pin_memory) {
+//   TORCH_LAZY_FN_COUNTER("xla::");
+//   // Fall back to CPU if layout or pin_memory are not default
+//   if (layout.value_or(at::Layout::Strided) != at::Layout::Strided ||
+//       pin_memory.value_or(false)) {
+//     return at::native::call_fallback_fn<&xla_cpu_fallback, ATEN_OP(full)>::call(
+//         size, fill_value, dtype, layout, device, pin_memory);
+//   }
+//   return bridge::AtenFromXlaTensor(tensor_methods::full(
+//       absl::Span<const int64_t>(size), fill_value,
+//       GetXlaDeviceOrCurrent(device), at::dtype_or_default(dtype)));
+// }
+
+at::Tensor XLANativeFunctions::full_symint(at::SymIntArrayRef size,
                                     const at::Scalar& fill_value,
                                     c10::optional<at::ScalarType> dtype,
                                     c10::optional<at::Layout> layout,
@@ -1334,11 +1352,10 @@ at::Tensor XLANativeFunctions::full(at::IntArrayRef size,
   if (layout.value_or(at::Layout::Strided) != at::Layout::Strided ||
       pin_memory.value_or(false)) {
     return at::native::call_fallback_fn<&xla_cpu_fallback, ATEN_OP(full)>::call(
-        size, fill_value, dtype, layout, device, pin_memory);
+        C10_AS_INTARRAYREF_SLOW(size), fill_value, dtype, layout, device, pin_memory);
   }
-  return bridge::AtenFromXlaTensor(tensor_methods::full(
-      absl::Span<const int64_t>(size), fill_value,
-      GetXlaDeviceOrCurrent(device), at::dtype_or_default(dtype)));
+  return bridge::AtenFromXlaTensor(tensor_methods::full_symint(
+      size, fill_value, GetXlaDeviceOrCurrent(device), at::dtype_or_default(dtype)));
 }
 
 at::Tensor XLANativeFunctions::gather(const at::Tensor& self, int64_t dim,
@@ -3039,10 +3056,10 @@ at::Tensor XLANativeFunctions::sub(const at::Tensor& self,
   TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::");
   // Currently, we disallow the case when both operands contain dynamic
   // dimensions. This is consistent with PyTorch's behavior.
-  XLA_CHECK(!(tensor_has_dym_dim(self) && tensor_has_dym_dim(other)))
-      << "Both operands of torch.sub cannot have dynamic dimensions at the "
-         "same time. This is not "
-         "supported in PyTorch/XLA.";
+  // XLA_CHECK(!(tensor_has_dym_dim(self) && tensor_has_dym_dim(other)))
+  //     << "Both operands of torch.sub cannot have dynamic dimensions at the "
+  //        "same time. This is not "
+  //        "supported in PyTorch/XLA.";
 
   CheckSubOperandTypes(self.scalar_type(), other.scalar_type());
   at::native::alpha_check(at::result_type(self, other), alpha);
@@ -3353,10 +3370,33 @@ at::Tensor XLANativeFunctions::view_copy_symint(const at::Tensor& self,
   XLATensorPtr xla_input = bridge::GetXlaTensor(self);
   bool input_has_dyn_shape = xla_input->shape().get().is_dynamic();
 
-  XLA_CHECK(!(input_has_dyn_shape && input_shape_static))
+  if (input_has_dyn_shape && input_shape_static) {
+    std::vector<c10::SymInt> sym_shape;
+    sym_shape.resize(shape.size());
+    int dyn_dim = -1;
+    int64_t complete_element_count = 1;
+    for (int i = 0; i < int_shape.value().size(); i++) {
+      if (int_shape.value()[i] == -1) {
+        dyn_dim = i;
+      } else {
+        complete_element_count *= int_shape.value()[i];
+        sym_shape[i] = c10::SymInt(int_shape.value()[i]);
+      }
+    }
+    XLA_CHECK(dyn_dim != -1)
       << "This view op has dynamic input tensor but static input shape. This "
          "behavior is currently unsupported; if the user believes this must be "
          "supported, please file a feature request against PyTorch/XLA.";
+    sym_shape[dyn_dim] = self.sym_numel() / complete_element_count;
+    LOG(INFO) << "view_copy_symint: " << c10::SymIntArrayRef(sym_shape.data(), sym_shape.size()) << ", " << self.sym_numel() << "; " << complete_element_count;
+    return bridge::AtenFromXlaTensor(
+      tensor_methods::view_symint(xla_input, c10::SymIntArrayRef(sym_shape.data(), sym_shape.size())));
+  }
+
+  // XLA_CHECK(!(input_has_dyn_shape && input_shape_static))
+  //     << "This view op has dynamic input tensor but static input shape. This "
+  //        "behavior is currently unsupported; if the user believes this must be "
+  //        "supported, please file a feature request against PyTorch/XLA.";
   return bridge::AtenFromXlaTensor(
       tensor_methods::view_symint(xla_input, shape));
 }
@@ -3595,9 +3635,13 @@ at::Tensor XLANativeFunctions::embedding_symint(const at::Tensor& weight,
                                         scale_grad_by_freq, sparse);
   }
 
+  std::vector<c10::SymInt> final_size;
+  auto indices_sizes = indices.sym_sizes();
+  final_size.insert(final_size.begin(), indices_sizes.begin(), indices_sizes.end());
+  final_size.push_back(weight.sym_sizes()[1]);
   TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::");
-  return bridge::AtenFromXlaTensor(tensor_methods::embedding(
-      bridge::GetXlaTensor(weight), bridge::GetXlaTensor(indices)));
+  return bridge::AtenFromXlaTensor(tensor_methods::embedding_symint(
+      bridge::GetXlaTensor(weight), bridge::GetXlaTensor(indices), final_size, indices.sym_numel()));
 }
 
 at::Tensor XLANativeFunctions::_euclidean_dist(const at::Tensor& x1,
@@ -3739,16 +3783,30 @@ at::Tensor XLANativeFunctions::diagonal_backward_symint(
       diagonal_backward)>::call(grad_output, input_sizes, offset, dim1, dim2);
 }
 
-at::Tensor XLANativeFunctions::slice_backward(const at::Tensor& grad_output,
-                                              at::IntArrayRef input_sizes,
-                                              int64_t dim, int64_t start,
-                                              int64_t end, int64_t step) {
+// at::Tensor XLANativeFunctions::slice_backward(const at::Tensor& grad_output,
+//                                               at::IntArrayRef input_sizes,
+//                                               int64_t dim, int64_t start,
+//                                               int64_t end, int64_t step) {
+//   // See Note: [Disabling functionalization]
+//   if (runtime::sys_util::GetEnvBool("XLA_DISABLE_FUNCTIONALIZATION", false)) {
+//     return at::native::slice_backward(grad_output, input_sizes, dim, start, end,
+//                                       step);
+//   }
+//   return at::functionalization::functionalize_aten_op<ATEN_OP(
+//       slice_backward)>::call(grad_output, input_sizes, dim, start, end, step);
+// }
+
+at::Tensor XLANativeFunctions::slice_backward_symint(const at::Tensor& grad_output,
+                                              c10::SymIntArrayRef input_sizes,
+                                              int64_t dim, c10::SymInt start,
+                                              c10::SymInt end, c10::SymInt step) {
+  LOG(INFO) << "slice_backward_symint: " << grad_output.sym_sizes() << ", " << input_sizes;
   // See Note: [Disabling functionalization]
   if (runtime::sys_util::GetEnvBool("XLA_DISABLE_FUNCTIONALIZATION", false)) {
-    return at::native::slice_backward(grad_output, input_sizes, dim, start, end,
-                                      step);
+    return at::native::slice_backward(grad_output, C10_AS_INTARRAYREF_SLOW(input_sizes), dim, start.guard_int(__FILE__, __LINE__), end.guard_int(__FILE__, __LINE__),
+                                      step.guard_int(__FILE__, __LINE__));
   }
-  return at::functionalization::functionalize_aten_op<ATEN_OP(
+  return at::functionalization::functionalize_aten_op_symint<ATEN_OP(
       slice_backward)>::call(grad_output, input_sizes, dim, start, end, step);
 }
 
