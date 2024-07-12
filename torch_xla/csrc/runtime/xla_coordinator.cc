@@ -1,5 +1,6 @@
 #include "torch_xla/csrc/runtime/xla_coordinator.h"
 
+#include "absl/time/time.h"
 #include "torch_xla/csrc/runtime/debug_macros.h"
 #include "torch_xla/csrc/runtime/sys_util.h"
 #include "xla/pjrt/distributed/distributed.h"
@@ -23,6 +24,9 @@ XlaCoordinator::XlaCoordinator(int global_rank, int world_size,
 
   xla::DistributedRuntimeClient::Options client_options;
   client_options.node_id = global_rank;
+  auto timeout =
+      runtime::sys_util::GetEnvInt("XLA_DIST_CLIENT_INIT_TIMEOUT", 1800);
+  client_options.init_timeout = absl::Seconds(timeout);
   dist_runtime_client_ =
       xla::GetDistributedRuntimeClient(dist_service_addr, client_options);
   XLA_CHECK(dist_runtime_client_->Connect().ok())

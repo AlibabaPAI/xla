@@ -415,3 +415,8 @@ variables:
           your code.
       type: bool
       default_value: false
+    XLA_DIST_CLIENT_INIT_TIMEOUT:
+      description:
+        - Timeout (seconds) for xla dist runtime client initialization.
+      type: int
+      default_value: 1800
