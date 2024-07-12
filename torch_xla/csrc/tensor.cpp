@@ -736,8 +736,12 @@ c10::SymNode XLASymNodeImpl::ne(const c10::SymNode& other) {
 }
 
 c10::SymNode XLASymNodeImpl::gt(const c10::SymNode& other) {
-  XLA_CHECK(false) << "XLASymNodeImpl::" << __FUNCTION__
-                   << " has not been implemented.";
+  TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::size_");
+  auto p_other = dynamic_cast<XLASymNodeImpl*>(other.get());
+  XLA_CHECK(is_int()) << __FUNCTION__ << " with non-int NYI";
+  XLA_CHECK(p_other->is_int()) << __FUNCTION__ << " with non-int NYI";
+  auto n_lt = torch::lazy::MakeNode<SizeLt>(p_other->node(), node());
+  return c10::make_intrusive<XLASymNodeImpl>(n_lt, PyType::BOOL);
 }
 
 c10::SymNode XLASymNodeImpl::lt(const c10::SymNode& other) {
@@ -872,6 +876,7 @@ c10::SymNode XLASymNodeImpl::wrap_bool(bool num) {
 }
 
 int64_t XLASymNodeImpl::guard_int(const char* file, int64_t line) {
+  return int_();
   XLA_CHECK(false) << "XLASymNodeImpl::" << __FUNCTION__
                    << " has not been implemented.";
 }
@@ -928,6 +933,22 @@ int64_t XLATensor::GetHandle() const {
 void XLATensor::MarkDynamicDimension(uint32_t dim) {
   auto* xla_node = dynamic_cast<XlaNode*>(GetIrValue().node.get());
   xla_node->MarkDynamicDimension(dim);
+}
+
+void XLATensor::MarkBoundedDynamicDimension(const std::vector<uint32_t>& dims,
+                                            const std::vector<uint32_t>& bounds) {
+  auto* xla_node = dynamic_cast<XlaNode*>(GetIrValue().node.get());
+  torch::lazy::BackendDataPtr backend_data = CurrentDataHandle();
+  if (backend_data == nullptr) {
+    backend_data = torch::lazy::getBackend()->GetComputationDataFromNode(
+          GetIrValue().node.get());
+  }
+  for (int i = 0; i < dims.size(); i++) {
+    xla_node->MarkBoundedDynamicDimension(dims[i], bounds[i]);
+    std::dynamic_pointer_cast<runtime::ComputationClient::Data>(backend_data)->MarkBoundedDynamicDimension(dims[i], bounds[i]);
+  }
+  // 
+  data()->generation += 1;
 }
 
 bool XLATensor::SetNodeUserMetadata(

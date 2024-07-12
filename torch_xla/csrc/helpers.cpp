@@ -311,8 +311,30 @@ xla::XlaOp XlaHelpers::DynamicReshape(xla::XlaOp input,
   }
   auto info = GetDynamicReshapeInfo(input_shape, output_sizes);
   if (info) {
-    return xla::ReshapeWithInferredDimension(input, output_sizes,
-                                             info->dynamic_dimension);
+    int input_dyn_dim = -1;
+    for (int i = 0; i < input_shape.rank(); i++) {
+      if (input_shape.is_bounded_dynamic_dimension(i)) {
+        XLA_CHECK(input_dyn_dim == -1)
+            << "Reshaping with multiple bounded shapes is not supported.";
+        input_dyn_dim = i;
+      }
+    }
+
+    auto output_shape = info->output_shape;
+    std::vector<xla::XlaOp> dim_sizes;
+    for (int i = 0; i < output_shape.rank(); i++) {
+      if (output_shape.is_bounded_dynamic_dimension(i)) {
+        dim_sizes.push_back(xla::GetDimensionSize(input, input_dyn_dim));
+      } else {
+        dim_sizes.push_back(XlaHelpers::ScalarValue<int32_t>(
+          output_shape.dimensions(i), input.builder()));
+      }
+    }
+    return DynamicBoundedReshape(input, dim_sizes, output_shape);
+    // return xla::DynamicReshape(input, dim_sizes, output_shape.dimensions(), runtime::util::ToVector<bool>(output_shape.dynamic_dimensions()));
+
+    // return xla::ReshapeWithInferredDimension(input, output_sizes,
+    //                                          info->dynamic_dimension);
   }
   return xla::Reshape(input, output_sizes);
 }
@@ -338,6 +360,25 @@ bool XlaHelpers::IsUnboundedDynamic(const xla::Shape& shape) {
   return std::any_of(dims.begin(), dims.end(), [](int64_t size) {
     return size == xla::Shape::kUnboundedSize;
   });
+}
+
+xla::XlaOp XlaHelpers::DynamicBoundedReshape(
+    xla::XlaOp input, const std::vector<xla::XlaOp>& size_ops, const xla::Shape& shape) {
+  if (!XlaHelpers::IsStableHloEnabled()) {
+    return xla::DynamicReshape(input, size_ops, shape.dimensions(), runtime::util::ToVector<bool>(shape.dynamic_dimensions()));
+  }
+  std::vector<xla::XlaOp> reshaped_ops;
+  int dim_size = shape.dimensions_size();
+  // Create the reshape from scalar to 1-D vector
+  for (int i = 0; i < dim_size; i++) {
+    reshaped_ops.push_back(xla::Reshape(size_ops[i], {1}));
+  }
+
+  // Create Concatenate op
+  auto concat_op = xla::ConcatInDim(input.builder(), reshaped_ops, {0});
+  return xla::CustomCall(
+      input.builder(), "mhlo.dynamic_reshape", {input, concat_op},
+      shape);
 }
 
 xla::XlaOp XlaHelpers::DynamicUnboundedReshape(
@@ -731,7 +772,7 @@ std::pair<xla::XlaOp, xla::XlaOp> XlaHelpers::PromoteShapes(xla::XlaOp op1,
   const xla::Shape& shape2 = ShapeHelper::ShapeOfXlaOp(op2);
 
   xla::Shape shape = GetPromotedShape(shape1, shape2);
-  if (shape1.is_unbounded_dynamic() || shape2.is_unbounded_dynamic()) {
+  if (XlaHelpers::IsStableHloEnabled() && (shape1.is_dynamic() || shape2.is_dynamic())) {
     return ImplicitBroadcastWithUnboundedDynamicShapes(op1, op2, shape);
   }
 
@@ -907,7 +948,7 @@ XlaHelpers::ImplicitBroadcastWithUnboundedDynamicShapes(
   const xla::Shape& shape1 = ShapeHelper::ShapeOfXlaOp(op1);
   const xla::Shape& shape2 = ShapeHelper::ShapeOfXlaOp(op2);
 
-  XLA_CHECK(shape1.is_unbounded_dynamic() || shape2.is_unbounded_dynamic());
+  // XLA_CHECK(shape1.is_unbounded_dynamic() || shape2.is_unbounded_dynamic());
   XLA_CHECK(shape.dimensions().size() ==
             std::max(shape1.dimensions().size(), shape2.dimensions().size()));
 

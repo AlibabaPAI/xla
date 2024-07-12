@@ -2280,6 +2280,12 @@ void InitXlaModuleBindings(py::module m) {
           }
           return result;
         });
+  m.def("_mark_dynamic", [](const at::Tensor& input, const std::vector<uint32_t>& dims,
+                            const std::vector<uint32_t>& bounds) {
+    TORCH_LAZY_COUNTER("MarkDynamic", 1);
+    XLATensorPtr xtensor = bridge::GetXlaTensor(input);
+    xtensor->MarkBoundedDynamicDimension(dims, bounds);
+  });
   m.def("_xla_mark_dynamic", [](const at::Tensor& input, uint32_t dim) {
     TORCH_LAZY_COUNTER("XlaMarkDynamic", 1);
     XLATensorPtr xtensor = bridge::GetXlaTensor(input);
