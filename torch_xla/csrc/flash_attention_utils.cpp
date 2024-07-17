@@ -35,8 +35,6 @@ std::string FlashAttentionForwardParams::ToString() const {
   absl::StrAppend(&result, absl::StrCat(this->q_head_stride), "|");
   absl::StrAppend(&result, absl::StrCat(this->k_head_stride), "|");
   absl::StrAppend(&result, absl::StrCat(this->v_head_stride), "|");
-  absl::StrAppend(&result, absl::StrCat(this->total_q), "|");
-  absl::StrAppend(&result, absl::StrCat(this->total_k), "|");
   absl::StrAppend(&result, absl::StrCat(this->h), "|");
   absl::StrAppend(&result, absl::StrCat(this->h_k), "|");
   absl::StrAppend(&result, absl::StrCat(this->h_h_k_ratio), "|");
@@ -47,8 +45,6 @@ std::string FlashAttentionForwardParams::ToString() const {
   absl::StrAppend(&result, absl::StrCat(this->seqlen_q), "|");
   absl::StrAppend(&result, absl::StrCat(this->seqlen_k), "|");
   absl::StrAppend(&result, absl::StrCat(this->d), "|");
-  absl::StrAppend(&result, absl::StrCat(this->seqlen_q_rounded), "|");
-  absl::StrAppend(&result, absl::StrCat(this->seqlen_k_rounded), "|");
   absl::StrAppend(&result, absl::StrCat(this->d_rounded), "|");
   absl::StrAppend(&result, absl::StrCat(this->scale_softmax), "|");
   absl::StrAppend(&result, absl::StrCat(this->scale_softmax_log2), "|");
@@ -71,7 +67,7 @@ std::string FlashAttentionForwardParams::ToString() const {
 
 void FlashAttentionForwardParams::FromString(const std::string& str) {
   std::vector<std::string> params_list = absl::StrSplit(str, "|");
-  TORCH_CHECK(params_list.size() >= 38);  // at least 38 variables
+  TORCH_CHECK(params_list.size() >= 34);  // at least 38 variables
   absl::SimpleAtoi(params_list[0], &this->q_batch_stride);
   absl::SimpleAtoi(params_list[1], &this->k_batch_stride);
   absl::SimpleAtoi(params_list[2], &this->v_batch_stride);
@@ -81,37 +77,33 @@ void FlashAttentionForwardParams::FromString(const std::string& str) {
   absl::SimpleAtoi(params_list[6], &this->q_head_stride);
   absl::SimpleAtoi(params_list[7], &this->k_head_stride);
   absl::SimpleAtoi(params_list[8], &this->v_head_stride);
-  absl::SimpleAtoi(params_list[9], &this->total_q);
-  absl::SimpleAtoi(params_list[10], &this->total_k);
-  absl::SimpleAtoi(params_list[11], &this->h);
-  absl::SimpleAtoi(params_list[12], &this->h_k);
-  absl::SimpleAtoi(params_list[13], &this->h_h_k_ratio);
-  absl::SimpleAtoi(params_list[14], &this->o_batch_stride);
-  absl::SimpleAtoi(params_list[15], &this->o_row_stride);
-  absl::SimpleAtoi(params_list[16], &this->o_head_stride);
-  absl::SimpleAtoi(params_list[17], &this->b);
-  absl::SimpleAtoi(params_list[18], &this->seqlen_q);
-  absl::SimpleAtoi(params_list[19], &this->seqlen_k);
-  absl::SimpleAtoi(params_list[20], &this->d);
-  absl::SimpleAtoi(params_list[21], &this->seqlen_q_rounded);
-  absl::SimpleAtoi(params_list[22], &this->seqlen_k_rounded);
-  absl::SimpleAtoi(params_list[23], &this->d_rounded);
-  absl::SimpleAtof(params_list[24], &this->scale_softmax);
-  absl::SimpleAtof(params_list[25], &this->scale_softmax_log2);
-  absl::SimpleAtof(params_list[26], &this->p_dropout);
+  absl::SimpleAtoi(params_list[9], &this->h);
+  absl::SimpleAtoi(params_list[10], &this->h_k);
+  absl::SimpleAtoi(params_list[11], &this->h_h_k_ratio);
+  absl::SimpleAtoi(params_list[12], &this->o_batch_stride);
+  absl::SimpleAtoi(params_list[13], &this->o_row_stride);
+  absl::SimpleAtoi(params_list[14], &this->o_head_stride);
+  absl::SimpleAtoi(params_list[15], &this->b);
+  absl::SimpleAtoi(params_list[16], &this->seqlen_q);
+  absl::SimpleAtoi(params_list[17], &this->seqlen_k);
+  absl::SimpleAtoi(params_list[18], &this->d);
+  absl::SimpleAtoi(params_list[19], &this->d_rounded);
+  absl::SimpleAtof(params_list[20], &this->scale_softmax);
+  absl::SimpleAtof(params_list[21], &this->scale_softmax_log2);
+  absl::SimpleAtof(params_list[22], &this->p_dropout);
   uint32_t tmp;
-  absl::SimpleAtoi(params_list[27], &tmp);
+  absl::SimpleAtoi(params_list[23], &tmp);
   this->p_dropout_in_uint8_t = uint8_t(tmp);
-  absl::SimpleAtof(params_list[28], &this->rp_dropout);
-  absl::SimpleAtof(params_list[29], &this->scale_softmax_rp_dropout);
-  absl::SimpleAtob(params_list[30], &this->is_bf16);
-  absl::SimpleAtob(params_list[31], &this->is_causal);
-  absl::SimpleAtoi(params_list[32], &this->window_size_left);
-  absl::SimpleAtoi(params_list[33], &this->window_size_right);
-  absl::SimpleAtoi(params_list[34], &this->alibi_slopes_batch_stride);
-  absl::SimpleAtob(params_list[35], &this->is_seqlens_k_cumulative);
-  absl::SimpleAtoi(params_list[36], &this->num_splits);
-  absl::SimpleAtob(params_list[37], &this->enable_alibi_slopes);
+  absl::SimpleAtof(params_list[24], &this->rp_dropout);
+  absl::SimpleAtof(params_list[25], &this->scale_softmax_rp_dropout);
+  absl::SimpleAtob(params_list[26], &this->is_bf16);
+  absl::SimpleAtob(params_list[27], &this->is_causal);
+  absl::SimpleAtoi(params_list[28], &this->window_size_left);
+  absl::SimpleAtoi(params_list[29], &this->window_size_right);
+  absl::SimpleAtoi(params_list[30], &this->alibi_slopes_batch_stride);
+  absl::SimpleAtob(params_list[31], &this->is_seqlens_k_cumulative);
+  absl::SimpleAtoi(params_list[32], &this->num_splits);
+  absl::SimpleAtob(params_list[33], &this->enable_alibi_slopes);
 }
 
 std::string FlashAttentionBackwardParams::ToString() const {
@@ -136,8 +128,8 @@ std::string FlashAttentionBackwardParams::ToString() const {
 void FlashAttentionBackwardParams::FromString(const std::string& str) {
   FlashAttentionForwardParams::FromString(str);
   std::vector<std::string> params_list = absl::StrSplit(str, "|");
-  TORCH_CHECK(params_list.size() == 51);
-  const int offset = 38;  // FlashAttentionForwardParams has 38 variables
+  TORCH_CHECK(params_list.size() == 47);
+  const int offset = 34;  // FlashAttentionForwardParams has 38 variables
   absl::SimpleAtoi(params_list[offset + 0], &this->do_batch_stride);
   absl::SimpleAtoi(params_list[offset + 1], &this->do_row_stride);
   absl::SimpleAtoi(params_list[offset + 2], &this->do_head_stride);
@@ -155,11 +147,9 @@ void FlashAttentionBackwardParams::FromString(const std::string& str) {
 
 void set_forward_params(
     FlashAttentionForwardParams& params, const size_t b, const size_t seqlen_q,
-    const size_t seqlen_k, const size_t seqlen_q_rounded,
-    const size_t seqlen_k_rounded, const size_t h, const size_t h_k,
-    const size_t d, const size_t d_rounded, const size_t total_q,
-    const size_t total_k, const at::Tensor& q, const at::Tensor& k,
-    const at::Tensor& v, void* cu_seqlens_q_d, float p_dropout,
+    const size_t seqlen_k, const size_t h, const size_t h_k,
+    const size_t d, const size_t d_rounded, const at::Tensor& q, const at::Tensor& k,
+    const at::Tensor& v, float p_dropout,
     float softmax_scale, bool is_causal, int window_size_left,
     int window_size_right, int alibi_slopes_batch_stride,
     bool enable_alibi_slopes, bool seqlenq_ngroups_swapped) {
@@ -185,13 +175,8 @@ void set_forward_params(
   params.h_h_k_ratio = h / h_k;
   params.seqlen_q = seqlen_q;
   params.seqlen_k = seqlen_k;
-  params.seqlen_q_rounded = seqlen_q_rounded;
-  params.seqlen_k_rounded = seqlen_k_rounded;
   params.d = d;
   params.d_rounded = d_rounded;
-
-  params.total_q = total_q;
-  params.total_k = total_k;
 
   // Set the different scale values.
   params.scale_softmax = softmax_scale;
@@ -207,13 +192,7 @@ void set_forward_params(
   params.scale_softmax_rp_dropout = params.rp_dropout * params.scale_softmax;
   TORCH_CHECK(p_dropout < 1.f);
 
-  params.is_causal = window_size_left < 0 && window_size_right == 0;
-  if (window_size_left < 0 && window_size_right >= 0) {
-    window_size_left = seqlen_k;
-  }
-  if (window_size_left >= 0 && window_size_right < 0) {
-    window_size_right = seqlen_k;
-  }
+  params.is_causal = is_causal;
   params.window_size_left = window_size_left;
   params.window_size_right = window_size_right;
   params.is_seqlens_k_cumulative = true;
@@ -227,22 +206,20 @@ void set_forward_params(
 
 void set_backward_params(
     FlashAttentionBackwardParams& params, const size_t b, const size_t seqlen_q,
-    const size_t seqlen_k, const size_t seqlen_q_rounded,
-    const size_t seqlen_k_rounded, const size_t h, const size_t h_k,
-    const size_t d, const size_t d_rounded, const size_t total_q,
-    const size_t total_k, const at::Tensor& q, const at::Tensor& k,
-    const at::Tensor& v, const at::Tensor& dout, void* cu_seqlens_q_d,
+    const size_t seqlen_k, const size_t h, const size_t h_k,
+    const size_t d, const size_t d_rounded, const at::Tensor& q, const at::Tensor& k,
+    const at::Tensor& v, const at::Tensor& dout,
     float p_dropout, float softmax_scale, bool is_causal, int window_size_left,
     int window_size_right, bool deterministic, int alibi_slopes_batch_stride,
     bool enable_alibi_slopes) {
   // Reset the parameters
   memset(&params, 0, sizeof(params));
 
-  set_forward_params(params, b, seqlen_q, seqlen_k, seqlen_q_rounded,
-                     seqlen_k_rounded, h, h_k, d, d_rounded, total_q, total_k,
-                     q, k, v, cu_seqlens_q_d, p_dropout, softmax_scale,
+  set_forward_params(params, b, seqlen_q, seqlen_k, h, h_k, d, d_rounded,
+                     q, k, v, p_dropout, softmax_scale,
                      is_causal, window_size_left, window_size_right,
                      alibi_slopes_batch_stride, enable_alibi_slopes, false);
+  // TODO(wenting.swt): check me, what if cu_seqlen_q is nullptr
   params.do_row_stride = dout.stride(-3);
   params.do_head_stride = dout.stride(-2);
   params.dq_row_stride = q.stride(-3);
@@ -256,9 +233,8 @@ void set_backward_params(
 
 FlashAttentionForwardParams get_flash_attention_forward_params(
     const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
-    const at::Tensor& cu_seqlens_q, const at::Tensor& cu_seqlens_k,
-    c10::optional<at::Tensor>& alibi_slopes_, const int max_seqlen_q,
-    const int max_seqlen_k, const float p_dropout, const float softmax_scale,
+    c10::optional<at::Tensor>& attention_mask, // (batch_size, seqlen)
+    c10::optional<at::Tensor>& alibi_slopes_, const float p_dropout, const float softmax_scale,
     const bool zero_tensors, const bool is_causal, int window_size_left,
     int window_size_right, const bool return_softmax) {
   auto dprops = at::cuda::getCurrentDeviceProperties();
@@ -272,62 +248,39 @@ FlashAttentionForwardParams get_flash_attention_forward_params(
               ((is_sm8x || is_sm90) && q_dtype == torch::kBFloat16));
   TORCH_CHECK(k.dtype() == q_dtype);
   TORCH_CHECK(v.dtype() == q_dtype);
-  TORCH_CHECK(cu_seqlens_q.dtype() == torch::kInt32);
-  TORCH_CHECK(cu_seqlens_k.dtype() == torch::kInt32);
+
 
   TORCH_CHECK(q.stride(-1) == 1);
   TORCH_CHECK(k.stride(-1) == 1);
   TORCH_CHECK(v.stride(-1) == 1);
-  TORCH_CHECK(cu_seqlens_q.is_contiguous());
-  TORCH_CHECK(cu_seqlens_k.is_contiguous());
 
   const auto sizes = q.sizes();
-
-  const int batch_size = cu_seqlens_q.numel() - 1;
-  const int total_q = sizes[0];
-  const int num_heads = sizes[1];
-  const int head_size_og = sizes[2];
-  const int total_k = k.size(0);
-  const int num_heads_k = k.size(1);
+  const int batch_size = sizes[0];
+  const int seqlen_q = sizes[1];
+  const int num_heads = sizes[2];
+  const int head_size_og = sizes[3];
+  const int seqlen_k = k.size(1);
+  const int num_heads_k = k.size(2);
 
   // TODO(wenting.swt): support max_seqlen_q==1
   // if (max_seqlen_q == 1 && !alibi_slopes_.has_value()) {}
-  if (is_causal) {
-    window_size_right = 0;
-  }
-
-  // Faster to transpose q from (b, 1, (nheads_kv ngroups), d) to (b, ngroups,
-  // nheads_kv, d) in this case H/t Daniel Haziza
-  const int seqlenq_ngroups_swapped =
-      max_seqlen_q == 1 && num_heads > num_heads_k && window_size_left < 0 &&
-      window_size_right < 0 && p_dropout == 0.f && head_size_og % 8 == 0 &&
-      !alibi_slopes_.has_value();
-
-  // TODO(wenting.swt): support max_seqlen_q==1
-  // if (seqlenq_ngroups_swapped) { }
 
   TORCH_CHECK(batch_size > 0);
   TORCH_CHECK(head_size_og <= 256);
   TORCH_CHECK(num_heads % num_heads_k == 0);
 
-  if (window_size_left >= max_seqlen_k) {
-    window_size_left = -1;
-  }
-  if (window_size_right >= max_seqlen_k) {
-    window_size_right = -1;
-  }
 
-  CHECK_SHAPE(q, total_q, num_heads, head_size_og);
-  CHECK_SHAPE(k, total_k, num_heads_k, head_size_og);
-  CHECK_SHAPE(v, total_k, num_heads_k, head_size_og);
-  CHECK_SHAPE(cu_seqlens_q, batch_size + 1);
-  CHECK_SHAPE(cu_seqlens_k, batch_size + 1);
+  CHECK_SHAPE(q, batch_size, seqlen_q, num_heads, head_size_og);
+  CHECK_SHAPE(k, batch_size, seqlen_k, num_heads_k, head_size_og);
+  CHECK_SHAPE(v, batch_size, seqlen_k, num_heads_k, head_size_og);
+  if (attention_mask.has_value()) {
+    TORCH_CHECK(attention_mask.value().dtype() == torch::kInt32);
+    CHECK_SHAPE(attention_mask.value(), batch_size, seqlen_k);
+  }
 
   auto round_multiple = [](int x, int m) { return (x + m - 1) / m * m; };
   const int head_size = round_multiple(head_size_og, 8);
   const int head_size_rounded = round_multiple(head_size, 32);
-  const int seqlen_q_rounded = round_multiple(max_seqlen_q, 128);
-  const int seqlen_k_rounded = round_multiple(max_seqlen_k, 128);
 
   // User should pad in python
   TORCH_CHECK(head_size_og % 8 == 0);
@@ -350,11 +303,9 @@ FlashAttentionForwardParams get_flash_attention_forward_params(
 
   FlashAttentionForwardParams params;
   set_forward_params(
-      params, batch_size, max_seqlen_q, max_seqlen_k, seqlen_q_rounded,
-      seqlen_k_rounded, num_heads, num_heads_k, head_size, head_size_rounded,
-      total_q, total_k, q, k, v, cu_seqlens_q.data_ptr(), p_dropout,
+      params, batch_size, seqlen_q, seqlen_k, num_heads, num_heads_k, head_size, head_size_rounded, q, k, v, p_dropout,
       softmax_scale, is_causal, window_size_left, window_size_right,
-      alibi_slopes_batch_stride, enable_alibi_slopes, seqlenq_ngroups_swapped);
+      alibi_slopes_batch_stride, enable_alibi_slopes, /*seqlenq_ngroups_swapped*/false);
 
   return params;
 }
@@ -362,9 +313,8 @@ FlashAttentionForwardParams get_flash_attention_forward_params(
 FlashAttentionBackwardParams get_flash_attention_backward_params(
     const at::Tensor& dout, const at::Tensor& q, const at::Tensor& k,
     const at::Tensor& v, const at::Tensor& out, const at::Tensor& softmax_lse,
-    const at::Tensor& cu_seqlens_q, const at::Tensor& cu_seqlens_k,
-    c10::optional<at::Tensor>& alibi_slopes_, const int max_seqlen_q,
-    const int max_seqlen_k, const float p_dropout, const float softmax_scale,
+    c10::optional<at::Tensor>& cu_seqlens_q, c10::optional<at::Tensor>& cu_seqlens_k,
+    c10::optional<at::Tensor>& alibi_slopes_, const float p_dropout, const float softmax_scale,
     const bool zero_tensors, const bool is_causal, int window_size_left,
     int window_size_right, const bool deterministic) {
   if (is_causal) {
@@ -385,26 +335,21 @@ FlashAttentionBackwardParams get_flash_attention_backward_params(
   TORCH_CHECK(v.dtype() == q_dtype);
   TORCH_CHECK(out.dtype() == q_dtype);
   TORCH_CHECK(dout.dtype() == q_dtype);
-  TORCH_CHECK(cu_seqlens_q.dtype() == torch::kInt32);
-  TORCH_CHECK(cu_seqlens_k.dtype() == torch::kInt32);
 
   TORCH_CHECK(q.stride(-1) == 1);
   TORCH_CHECK(k.stride(-1) == 1);
   TORCH_CHECK(v.stride(-1) == 1);
   TORCH_CHECK(out.stride(-1) == 1);
   TORCH_CHECK(dout.stride(-1) == 1);
-  TORCH_CHECK(cu_seqlens_q.is_contiguous());
-  TORCH_CHECK(cu_seqlens_k.is_contiguous());
 
   const auto sizes = q.sizes();
-
-  const int total_q = sizes[0];
-  const int batch_size = cu_seqlens_q.numel() - 1;
-  const int num_heads = sizes[1];
-  const int head_size_og = dout.size(2);
-  const int head_size = sizes[2];
-  const int total_k = k.size(0);
-  const int num_heads_k = k.size(1);
+  const int batch_size = sizes[0];
+  const int seqlen_q = sizes[1];
+  const int num_heads = sizes[2];
+  const int head_size_og = dout.size(3);
+  const int head_size = sizes[3];
+  const int seqlen_k = k.size(1);
+  const int num_heads_k = k.size(2);
   TORCH_CHECK(batch_size > 0);
   TORCH_CHECK((head_size % 8 == 0) && (head_size <= 256));
   if (head_size > 192) {
@@ -419,20 +364,26 @@ FlashAttentionBackwardParams get_flash_attention_backward_params(
 
   auto round_multiple = [](int x, int m) { return (x + m - 1) / m * m; };
   const int head_size_rounded = round_multiple(head_size, 32);
-  const int seqlen_q_rounded = round_multiple(max_seqlen_q, 128);
-  const int seqlen_k_rounded = round_multiple(max_seqlen_k, 128);
 
   TORCH_CHECK(head_size == round_multiple(head_size_og, 8),
               "head_size must be head_size_og rounded to a multiple of 8");
 
-  CHECK_SHAPE(q, total_q, num_heads, head_size);
-  CHECK_SHAPE(k, total_k, num_heads_k, head_size);
-  CHECK_SHAPE(v, total_k, num_heads_k, head_size);
-  CHECK_SHAPE(out, total_q, num_heads, head_size);
-  CHECK_SHAPE(dout, total_q, num_heads, head_size);
-  CHECK_SHAPE(cu_seqlens_q, batch_size + 1);
-  CHECK_SHAPE(cu_seqlens_k, batch_size + 1);
+  CHECK_SHAPE(q, batch_size, seqlen_q, num_heads, head_size);
+  CHECK_SHAPE(k, batch_size, seqlen_k, num_heads_k, head_size);
+  CHECK_SHAPE(v, batch_size, seqlen_k, num_heads_k, head_size);
+  CHECK_SHAPE(out, batch_size, seqlen_q, num_heads, head_size);
+  CHECK_SHAPE(dout, batch_size, seqlen_q, num_heads, head_size);
 
+  if (cu_seqlens_q.has_value() && cu_seqlens_k.has_value()) {
+    TORCH_CHECK(cu_seqlens_q.value().dtype() == torch::kInt32);
+    TORCH_CHECK(cu_seqlens_k.value().dtype() == torch::kInt32);
+    TORCH_CHECK(cu_seqlens_q.value().is_contiguous());
+    TORCH_CHECK(cu_seqlens_k.value().is_contiguous());
+    TORCH_CHECK(batch_size == cu_seqlens_q.value().numel() - 1);
+    CHECK_SHAPE(cu_seqlens_q.value(), batch_size + 1);
+    CHECK_SHAPE(cu_seqlens_k.value(), batch_size + 1);
+  }
+  
   int alibi_slopes_batch_stride = 0;
   bool enable_alibi_slopes = false;
   if (alibi_slopes_.has_value()) {
@@ -451,12 +402,70 @@ FlashAttentionBackwardParams get_flash_attention_backward_params(
 
   FlashAttentionBackwardParams params;
   set_backward_params(
-      params, batch_size, max_seqlen_q, max_seqlen_k, seqlen_q_rounded,
-      seqlen_k_rounded, num_heads, num_heads_k, head_size, head_size_rounded,
-      total_q, total_k, q, k, v, dout, cu_seqlens_q.data_ptr(), p_dropout,
+      params, batch_size, seqlen_q, seqlen_k, num_heads, num_heads_k, head_size, head_size_rounded, q, k, v, dout, p_dropout,
       softmax_scale, is_causal, window_size_left, window_size_right,
       deterministic, alibi_slopes_batch_stride, enable_alibi_slopes);
   return params;
+}
+
+at::Tensor cu_seqlens_to_indices(const at::Tensor& cu_seqlens,
+                                 int batch_size,
+                                 int seqlen,
+                                 torch::Dtype scalar_type,
+                                 int& max_seqlen_in_batch,
+                                 int& total) {
+  total = cu_seqlens[-1].item<int>();
+  torch::Tensor nonzero_counts = cu_seqlens.slice(
+    0, 1, cu_seqlens.size(0)) - cu_seqlens.slice(
+      0, 0, cu_seqlens.size(0) - 1);
+  std::array<int64_t, 2> shape = {batch_size, seqlen};
+
+  auto opts = torch::TensorOptions().dtype(scalar_type).device(torch::kCUDA);
+  torch::Tensor rows = torch::arange(shape[0], opts.dtype(torch::kInt32)).unsqueeze(1);
+  torch::Tensor cols = torch::arange(shape[1], opts.dtype(torch::kInt32)).unsqueeze(0);
+  torch::Tensor mask = cols < nonzero_counts.unsqueeze(1);
+  max_seqlen_in_batch = torch::sum(mask, {1}).max().item<int>();
+
+  torch::Tensor matrix = torch::zeros(shape, opts.dtype(torch::kInt32));
+  matrix.index_put_({mask}, torch::arange(
+    1, mask.sum().item<int64_t>() + 1, opts.dtype(torch::kInt32)));
+  torch::Tensor flattened_matrix = matrix.flatten();
+
+  auto indices = torch::nonzero(flattened_matrix).squeeze();
+  total = indices.size(0);
+  return indices;
+}
+
+at::Tensor mask_to_indices(const at::Tensor& attention_mask,
+                           int& max_seqlen_in_batch,
+                           int& total,
+                           at::Tensor& cu_seqlen) {
+  auto opts = torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA);
+  at::Tensor seqlens_in_batch = torch::sum(attention_mask, {1});
+  at::Tensor indices = torch::nonzero(attention_mask.flatten()).flatten();
+  total = indices.size(0);
+  max_seqlen_in_batch = seqlens_in_batch.max().item<int>();
+  at::Tensor cumsum = torch::cumsum(seqlens_in_batch, 0);
+  cu_seqlen.slice(0, 1, seqlens_in_batch.size(0) + 1).copy_(cumsum);
+  return indices;
+}
+
+at::Tensor index_first_axis(const at::Tensor& input, const at::Tensor& indices) {
+  torch::IntArrayRef sizes = input.sizes();
+  int64_t first_axis_dim = sizes[0];
+  auto other_shape = sizes.slice(1, sizes.size() - 1);
+
+  int64_t second_dim = 1;
+  for (auto dim: other_shape) {
+    second_dim *= dim;
+  }
+
+  at::Tensor flat_input = torch::flatten(input, 1);
+  torch::Tensor repeated_indices = indices.unsqueeze(1).expand({indices.size(0), second_dim});
+  at::Tensor gather_input = torch::gather(flat_input, 0, repeated_indices);
+  std::vector<int64_t> reshaped_size = {-1};
+  reshaped_size.insert(reshaped_size.end(), other_shape.begin(), other_shape.end());
+  return gather_input.reshape(reshaped_size);
 }
 
 }  // namespace torch_xla
