@@ -1,5 +1,7 @@
 #include "torch_xla/csrc/stack_frame_index_builder.h"
 
+#include "absl/strings/str_join.h"
+
 namespace torch_xla {
 
 // Invalid stack frame id - used for stack frame population

@@ -2401,33 +2401,38 @@ void InitXlaModuleBindings(py::module m) {
   // -------------FlashAttention Integration API Start-----------------
   m.def("_flash_attention_forward",
         [](const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
-           const at::Tensor& cu_seqlens_q, const at::Tensor& cu_seqlens_k,
-           c10::optional<at::Tensor>& alibi_slopes, const int max_seqlen_q,
-           const int max_seqlen_k, const float p_dropout,
+           c10::optional<at::Tensor>& attention_mask,
+           c10::optional<at::Tensor>& alibi_slopes, const float p_dropout,
            const float softmax_scale, const bool zero_tensors,
            const bool is_causal, const int window_size_left,
            const int window_size_right, const bool return_softmax,
            c10::optional<at::Generator> gen_) {
           // get launch params on at::Tensor
           auto params = get_flash_attention_forward_params(
-              q, k, v, cu_seqlens_q, cu_seqlens_k, alibi_slopes, max_seqlen_q,
-              max_seqlen_k, p_dropout, softmax_scale, zero_tensors, is_causal,
-              window_size_left, window_size_right, return_softmax);
+              q, k, v, attention_mask, alibi_slopes, p_dropout, softmax_scale,
+              zero_tensors, is_causal, window_size_left, window_size_right,
+              return_softmax);
+          auto params_str = params.ToString();
           // call flash attention forward
           XLATensorPtr q_xla = bridge::GetXlaTensor(q);
           XLATensorPtr k_xla = bridge::GetXlaTensor(k);
           XLATensorPtr v_xla = bridge::GetXlaTensor(v);
-          XLATensorPtr cu_seqlens_q_xla = bridge::GetXlaTensor(cu_seqlens_q);
-          XLATensorPtr cu_seqlens_k_xla = bridge::GetXlaTensor(cu_seqlens_k);
           XLATensorPtr alibi_slopes_xla =
               alibi_slopes.has_value()
                   ? bridge::GetXlaTensor(alibi_slopes.value())
                   : XLATensorPtr();
 
-          std::vector<XLATensorPtr> xresults =
-              tensor_methods::flash_attention_forward(
-                  q_xla, k_xla, v_xla, cu_seqlens_q_xla, cu_seqlens_k_xla,
-                  alibi_slopes_xla, params);
+          std::vector<XLATensorPtr> xresults;
+          if (attention_mask.has_value()) {
+            XLATensorPtr attention_mask_xla =
+                bridge::GetXlaTensor(attention_mask.value());
+            xresults = tensor_methods::flash_attention_varlen_forward(
+                q_xla, k_xla, v_xla, attention_mask_xla, alibi_slopes_xla,
+                params, params_str);
+          } else {
+            xresults = tensor_methods::flash_attention_forward(
+                q_xla, k_xla, v_xla, alibi_slopes_xla, params, params_str);
+          }
           std::vector<at::Tensor> results;
           for (auto& xresult : xresults) {
             at::Tensor tensor = bridge::AtenFromXlaTensor(std::move(xresult));
@@ -2436,51 +2441,59 @@ void InitXlaModuleBindings(py::module m) {
           }
           return results;
         });
-  m.def("_flash_attention_backward",
-        [](const at::Tensor& dout, const at::Tensor& q, const at::Tensor& k,
-           const at::Tensor& v, const at::Tensor& out,
-           const at::Tensor& softmax_lse, const at::Tensor& cu_seqlens_q,
-           const at::Tensor& cu_seqlens_k,
-           c10::optional<at::Tensor>& alibi_slopes, const int max_seqlen_q,
-           const int max_seqlen_k, const float p_dropout,
-           const float softmax_scale, const bool zero_tensors,
-           const bool is_causal, const int window_size_left,
-           const int window_size_right, const bool deterministic,
-           c10::optional<at::Generator> gen_, const at::Tensor& rng_state) {
-          // get launch params on at::Tensor
-          auto params = get_flash_attention_backward_params(
-              dout, q, k, v, out, softmax_lse, cu_seqlens_q, cu_seqlens_k,
-              alibi_slopes, max_seqlen_q, max_seqlen_k, p_dropout,
-              softmax_scale, zero_tensors, is_causal, window_size_left,
-              window_size_right, deterministic);
-          // call flash attention backward
-          XLATensorPtr dout_xla = bridge::GetXlaTensor(dout);
-          XLATensorPtr q_xla = bridge::GetXlaTensor(q);
-          XLATensorPtr k_xla = bridge::GetXlaTensor(k);
-          XLATensorPtr v_xla = bridge::GetXlaTensor(v);
-          XLATensorPtr out_xla = bridge::GetXlaTensor(out);
-          XLATensorPtr softmax_lse_xla = bridge::GetXlaTensor(softmax_lse);
-          XLATensorPtr cu_seqlens_q_xla = bridge::GetXlaTensor(cu_seqlens_q);
-          XLATensorPtr cu_seqlens_k_xla = bridge::GetXlaTensor(cu_seqlens_k);
-          XLATensorPtr rng_state_xla = bridge::GetXlaTensor(rng_state);
-          XLATensorPtr alibi_slopes_xla =
-              alibi_slopes.has_value()
-                  ? bridge::GetXlaTensor(alibi_slopes.value())
-                  : XLATensorPtr();
+  m.def(
+      "_flash_attention_backward",
+      [](const at::Tensor& dout, const at::Tensor& q, const at::Tensor& k,
+         const at::Tensor& v, const at::Tensor& out,
+         const at::Tensor& softmax_lse, c10::optional<at::Tensor>& cu_seqlens_q,
+         c10::optional<at::Tensor>& cu_seqlens_k,
+         c10::optional<at::Tensor>& alibi_slopes, const float p_dropout,
+         const float softmax_scale, const bool zero_tensors,
+         const bool is_causal, const int window_size_left,
+         const int window_size_right, const bool deterministic,
+         c10::optional<at::Generator> gen_, const at::Tensor& rng_state) {
+        // get launch params on at::Tensor
+        auto params = get_flash_attention_backward_params(
+            dout, q, k, v, out, softmax_lse, cu_seqlens_q, cu_seqlens_k,
+            alibi_slopes, p_dropout, softmax_scale, zero_tensors, is_causal,
+            window_size_left, window_size_right, deterministic);
+        auto params_str = params.ToString();
+        // call flash attention backward
+        XLATensorPtr dout_xla = bridge::GetXlaTensor(dout);
+        XLATensorPtr q_xla = bridge::GetXlaTensor(q);
+        XLATensorPtr k_xla = bridge::GetXlaTensor(k);
+        XLATensorPtr v_xla = bridge::GetXlaTensor(v);
+        XLATensorPtr out_xla = bridge::GetXlaTensor(out);
+        XLATensorPtr softmax_lse_xla = bridge::GetXlaTensor(softmax_lse);
+        XLATensorPtr rng_state_xla = bridge::GetXlaTensor(rng_state);
+        XLATensorPtr alibi_slopes_xla =
+            alibi_slopes.has_value()
+                ? bridge::GetXlaTensor(alibi_slopes.value())
+                : XLATensorPtr();
 
-          std::vector<XLATensorPtr> xresults =
-              tensor_methods::flash_attention_backward(
-                  dout_xla, q_xla, k_xla, v_xla, out_xla, softmax_lse_xla,
-                  cu_seqlens_q_xla, cu_seqlens_k_xla, rng_state_xla,
-                  alibi_slopes_xla, params);
-          std::vector<at::Tensor> results;
-          for (auto& xresult : xresults) {
-            at::Tensor tensor = bridge::AtenFromXlaTensor(std::move(xresult));
-            results.push_back(torch::autograd::make_variable(
-                tensor, /*requires_grad=*/false));
-          }
-          return results;
-        });
+        std::vector<XLATensorPtr> xresults;
+        if (cu_seqlens_q.has_value() && cu_seqlens_k.has_value()) {
+          XLATensorPtr cu_seqlens_q_xla =
+              bridge::GetXlaTensor(cu_seqlens_q.value());
+          XLATensorPtr cu_seqlens_k_xla =
+              bridge::GetXlaTensor(cu_seqlens_k.value());
+          xresults = tensor_methods::flash_attention_varlen_backward(
+              dout_xla, q_xla, k_xla, v_xla, out_xla, softmax_lse_xla,
+              cu_seqlens_q_xla, cu_seqlens_k_xla, rng_state_xla,
+              alibi_slopes_xla, params, params_str);
+        } else {
+          xresults = tensor_methods::flash_attention_backward(
+              dout_xla, q_xla, k_xla, v_xla, out_xla, softmax_lse_xla,
+              rng_state_xla, alibi_slopes_xla, params, params_str);
+        }
+        std::vector<at::Tensor> results;
+        for (auto& xresult : xresults) {
+          at::Tensor tensor = bridge::AtenFromXlaTensor(std::move(xresult));
+          results.push_back(
+              torch::autograd::make_variable(tensor, /*requires_grad=*/false));
+        }
+        return results;
+      });
   // -------------FlashAttention Integration API End-------------------
 
   // -------------Dynamo Integration API Start-------------------------
