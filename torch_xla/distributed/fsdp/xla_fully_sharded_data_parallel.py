@@ -1299,6 +1299,8 @@ class XlaFullyShardedDataParallel(nn.Module):
         self.optimization_barrier_op([grad_flat])
       if grad_flat.dtype != torch.float32 and self.fp32_reduce_scatter:
         grad_flat = grad_flat.to(torch.float32)
+      if not self.fp32_reduce_scatter:
+        grad_flat = grad_flat.to(self.compute_dtype)
       reduced_grad = self.reduce_scatter_op(
           xm.REDUCE_SUM,
           grad_flat.detach(),
