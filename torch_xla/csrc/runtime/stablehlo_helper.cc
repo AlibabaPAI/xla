@@ -34,6 +34,7 @@ static std::string getMlirModuleStr(mlir::ModuleOp& mlir_module) {
       runtime::sys_util::GetEnvBool("XLA_HLO_DEBUG", false);
   if (withSrcLineInfo) {
     flags.enableDebugInfo(/*enable=*/true, /*prettyForm=*/true);
+    flags.printGenericOpForm(true);
   }
   mlir_module.print(os, flags);
   return txt_mlir_module;
@@ -73,20 +74,20 @@ static absl::Status mhloToStablehloHelper(mlir::ModuleOp* mlir_module,
   // TODO(lsy323): Remove this pass when mhlo.dot will can be leagalized to
   // stablehlo.dot_general in MHLO->StableHLO converter. Or shape refinement
   // logic is fixed for stablehlo.dot.
-  pm.addNestedPass<mlir::func::FuncOp>(
-      mlir::mhlo::createLegalizeDotToDotGeneralPass());
+  // pm.addNestedPass<mlir::func::FuncOp>(
+  //     mlir::mhlo::createLegalizeDotToDotGeneralPass());
   // Apply pass to remove HLO tuple output, as MHLO/StableHLO supports multiple
   // outputs.
   pm.addPass(mlir::mhlo::createExpandHloTuplesPass());
   // Canonicalization after tuple flatten, to remove unused tuple op.
   pm.addNestedPass<mlir::func::FuncOp>(mlir::createCanonicalizerPass());
-  pm.addPass(mlir::mhlo::createHloLegalizeToStablehloPass());
-  // Group patterns into StableHLO composites.
-  pm.addPass(torch_xla::runtime::CreateBuildStableHLOCompositePass());
-  pm.addNestedPass<mlir::func::FuncOp>(
-      torch_xla::runtime::CreateRemoveXlaMarkTensorOpsPass());
-  pm.addNestedPass<mlir::func::FuncOp>(mlir::createCanonicalizerPass());
-  pm.addNestedPass<mlir::func::FuncOp>(mlir::createCSEPass());
+  // pm.addPass(mlir::mhlo::createHloLegalizeToStablehloPass());
+  // // Group patterns into StableHLO composites.
+  // pm.addPass(torch_xla::runtime::CreateBuildStableHLOCompositePass());
+  // pm.addNestedPass<mlir::func::FuncOp>(
+  //     torch_xla::runtime::CreateRemoveXlaMarkTensorOpsPass());
+  // pm.addNestedPass<mlir::func::FuncOp>(mlir::createCanonicalizerPass());
+  // pm.addNestedPass<mlir::func::FuncOp>(mlir::createCSEPass());
   if (!mlir::succeeded(pm.run(*mlir_module))) {
     return absl::Status(
         absl::StatusCode::kInternal,
@@ -103,6 +104,10 @@ void ConvertHloToStableHlo(const xla::HloModuleProto* proto,
   XLA_CHECK(status.ok()) << "HLO -> MHLO conversion failed.\n"
                          << status.message() << err_msg
                          << getHloModuleStr(proto);
+  
+  static bool debug =
+      runtime::sys_util::GetEnvBool("XLA_HLO_DEBUG", false);
+  if (debug) return;
   status = mhloToStablehloHelper(mlir_module, mlir_module->getContext());
   XLA_CHECK(status.ok()) << "MHLO -> StableHLO conversion failed.\n"
                          << status.message() << err_msg

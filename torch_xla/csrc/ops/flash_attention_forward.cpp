@@ -17,6 +17,16 @@
 namespace torch_xla {
 namespace {
 
+std::vector<torch::lazy::Value> GetValues(
+    const std::vector<torch::lazy::Value>& inputs,
+    const std::vector<torch::lazy::Value>& dimensions) {
+  std::vector<torch::lazy::Value> values;
+  values.reserve(inputs.size() + dimensions.size());
+  values.insert(values.begin(), inputs.begin(), inputs.end());
+  values.insert(values.end(), dimensions.begin(), dimensions.end());
+  return values;
+}
+
 xla::Shape NodeOutputShape(int batch_size, int num_heads, int seqlen_q,
                            const torch::lazy::Value& q) {
   xla::Shape softmax_lse_shape = xla::ShapeUtil::MakeShape(
@@ -24,6 +34,7 @@ xla::Shape NodeOutputShape(int batch_size, int num_heads, int seqlen_q,
   xla::Shape out_shape = GetXlaShape(q);
   xla::Shape rng_state_shape =
       xla::ShapeUtil::MakeShape(xla::PrimitiveType::U64, {2});
+  softmax_lse_shape.set_dynamic_dimension(2, out_shape.is_dynamic_dimension(0));
   return xla::ShapeUtil::MakeTupleShape(
       {softmax_lse_shape, out_shape, rng_state_shape});
 }
@@ -183,6 +194,19 @@ FlashAttentionForward::FlashAttentionForward(
               /*num_outputs=*/3,
               torch::lazy::MHash(params.b, params.h, params.seqlen_q)),
       params_(params) {}
+
+// FlashAttentionForward::FlashAttentionForward(
+//     const torch::lazy::Value& q, const torch::lazy::Value& k,
+//     const torch::lazy::Value& v, const torch::lazy::Value& cu_seqlens_q,
+//     const torch::lazy::Value& cu_seqlens_k,
+//     const SymIntElements& size_elements,
+//     const FlashAttentionForwardParams& params)
+//     : XlaNode(xla_flash_attention_forward,
+//               GetValues({q, k, v, cu_seqlens_q, cu_seqlens_k}, size_elements.GetSizeNodes()),
+//               NodeOutputShape(params.b, params.h, params.seqlen_q, q),
+//               /*num_outputs=*/3,
+//               torch::lazy::MHash(params.b, params.h, params.seqlen_q)),
+//       params_(params) {}
 
 FlashAttentionForward::FlashAttentionForward(
     const torch::lazy::Value& q, const torch::lazy::Value& k,

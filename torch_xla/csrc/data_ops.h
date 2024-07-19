@@ -120,6 +120,8 @@ xla::XlaOp BuildReplicationPadBackward(xla::XlaOp grad_output, xla::XlaOp input,
 xla::XlaOp PadInDim(xla::XlaOp input, int64_t dim, int64_t pad_lo,
                     int64_t pad_hi, const xla::XlaOp* pad_value = nullptr);
 
+xla::XlaOp BuildSelectSymInt(xla::XlaOp input, int dim, xla::XlaOp start, xla::XlaOp end, xla::XlaOp stride, const xla::Shape& output_shape);
+
 }  // namespace torch_xla
 
 #endif  // XLA_TORCH_XLA_CSRC_DATA_OPS_H_

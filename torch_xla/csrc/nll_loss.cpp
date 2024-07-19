@@ -16,20 +16,6 @@ struct WeightScale {
   xla::XlaOp scale;
 };
 
-xla::XlaOp CreateSymTensor(const xla::Shape& shape, xla::XlaOp operand) {
-  std::vector<xla::XlaOp> get_dim_ops;
-  for (int dim = 0; dim < shape.rank(); dim++) {
-    if (shape.is_dynamic_dimension(dim)) {
-      get_dim_ops.push_back(xla::Reshape(xla::GetDimensionSize(operand, dim), {1}));
-    } else {
-      get_dim_ops.push_back(xla::Reshape(
-          XlaHelpers::ScalarValue<int32_t>(shape.dimensions(dim), operand.builder()), {1}
-      ));
-    }
-  }
-  return xla::ConcatInDim(operand.builder(), get_dim_ops, {0});
-}
-
 // Build a iota tensor populated with values 0 through depth - 1, with the
 // exception of ignore_index which is set to -1 (if between 0 and depth - 1).
 // This allows the ignored index to be ignored by the one-hot conversion.
@@ -84,7 +70,7 @@ xla::XlaOp LabelsToOneHot(xla::XlaBuilder* builder, int64_t depth, int axis,
   const xla::Shape& one_hot_shape = ShapeHelper::ShapeOfXlaOp(one_hot_bool);
   if (XlaHelpers::IsStableHloEnabled() && one_hot_shape.is_dynamic()) {
     xla::Shape final_shape = xla::ShapeUtil::MakeShape(XlaHelpers::TypeOfXlaOp(on_value), one_hot_shape.dimensions(), runtime::util::ToVector<bool>(one_hot_shape.dynamic_dimensions()));
-    xla::XlaOp sym_op = CreateSymTensor(final_shape, one_hot_bool);
+    xla::XlaOp sym_op = XlaHelpers::CreateOutputDimsTensor(one_hot_bool);
     on_value = xla::DynamicBroadcastInDim(on_value, sym_op, {}, final_shape);
     off_value = xla::DynamicBroadcastInDim(off_value, sym_op, {}, final_shape);
     return xla::Select(one_hot_bool, on_value, off_value);
@@ -103,15 +89,15 @@ WeightScale DynamicGetMaskedWeight(xla::XlaOp weight, xla::XlaOp logits, const x
                   ignore_index, labels_shape.element_type(), labels.builder()));
   xla::XlaOp xweight;
   xla::Shape f32_shape = xla::ShapeUtil::MakeShape(xla::PrimitiveType::F32, logits_shape.dimensions(),  runtime::util::ToVector<bool>(logits_shape.dynamic_dimensions()));
-  xla::XlaOp sym_op = CreateSymTensor(f32_shape, logits);
+  xla::XlaOp sym_op = XlaHelpers::CreateOutputDimsTensor(logits);
   if (!weight.IsUninitialized()) {
     xla::Shape weight_shape = f32_shape;
     weight_shape.set_element_type(XlaHelpers::TypeOfXlaOp(weight));
     xweight = xla::DynamicBroadcastInDim(weight, sym_op, {1}, logits_shape);
   } else {
-    xweight = xla::DynamicBroadcastInDim(XlaHelpers::ScalarValue<float>(1.0, labels.builder()), sym_op, {}, f32_shape);
+    xweight = XlaHelpers::DynamicScalarBroadcast<float>(1.0, logits);
   }
-  xla::XlaOp zeros = xla::DynamicBroadcastInDim(XlaHelpers::ScalarValue<float>(0.0, labels.builder()), sym_op, {}, f32_shape);
+  xla::XlaOp zeros = XlaHelpers::DynamicScalarBroadcast<float>(0.0, logits);
   std::vector<int64_t> broadcast_dims(labels_shape.rank());
   std::iota(broadcast_dims.begin(), broadcast_dims.begin() + axis, 0);
   std::iota(broadcast_dims.begin() + axis, broadcast_dims.end(), axis + 1);
@@ -192,7 +178,7 @@ xla::XlaOp BuildNllLoss(xla::XlaOp logits, xla::XlaOp labels, xla::XlaOp weight,
   // will return NaN regardless of labelded logit values.
   xla::XlaOp non_labeled_mask = xla::Ne(one_hot_labels, one);
   labeled_logits = xla::Select(non_labeled_mask,
-                               xla::DynamicBroadcastInDim(zero, CreateSymTensor(logits_shape, logits), {}, logits_shape),
+                               xla::DynamicBroadcastInDim(zero, XlaHelpers::CreateOutputDimsTensor(logits), {}, logits_shape),
                                labeled_logits);
   // When the whole target is equal to the ignore_index in the nll_loss forward,
   // pytorch will return nan hence scale should be 0.
@@ -241,14 +227,14 @@ xla::XlaOp BuildNllLossBackward(xla::XlaOp grad_output, xla::XlaOp logits,
   xla::XlaOp grad = grad_output;
   if (grad_output_shape.rank() == 1) {
     if (XlaHelpers::IsStableHloEnabled() && logits_shape.is_dynamic()) {
-      grad = xla::DynamicBroadcastInDim(grad, CreateSymTensor(logits_shape, logits), {0}, logits_shape);
+      grad = xla::DynamicBroadcastInDim(grad, XlaHelpers::CreateOutputDimsTensor(logits), {0}, logits_shape);
     } else {
       grad = xla::BroadcastInDim(grad, logits_shape.dimensions(), {0});
     }
   } else if (grad_output_shape.rank() == 3) {
     // nll_loss_2d case
     if (XlaHelpers::IsStableHloEnabled() && logits_shape.is_dynamic()) {
-      grad = xla::DynamicBroadcastInDim(grad, CreateSymTensor(logits_shape, logits), {0, 2, 3}, logits_shape);
+      grad = xla::DynamicBroadcastInDim(grad, XlaHelpers::CreateOutputDimsTensor(logits), {0, 2, 3}, logits_shape);
     } else {
       grad = xla::BroadcastInDim(grad, logits_shape.dimensions(), {0, 2, 3});
     }

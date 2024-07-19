@@ -263,6 +263,12 @@ torch::lazy::NodePtr Add(const torch::lazy::Value& input,
 torch::lazy::NodePtr Mul(const torch::lazy::Value& input,
                          const torch::lazy::Value& other);
 
+torch::lazy::NodePtr DynamicArange(const torch::lazy::Value& size,
+                         const torch::lazy::Value& start,
+                         const torch::lazy::Value& step,
+                         xla::PrimitiveType scalar_type,
+                         const xla::Shape& shape);
+
 }  // namespace torch_xla
 
 #endif  // XLA_TORCH_XLA_CSRC_OPS_OPS_H_

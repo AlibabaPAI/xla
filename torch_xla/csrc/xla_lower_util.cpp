@@ -1273,4 +1273,17 @@ xla::XlaOp BuildTpuCustomCall(const std::vector<xla::XlaOp>& inputs,
                                    payload);
 }
 
+xla::XlaOp BuildDynamicArange(const xla::XlaOp& size,
+                       const xla::XlaOp& start,
+                       const xla::XlaOp& step,
+                       xla::PrimitiveType scalar_type,
+                       const xla::Shape& shape) {
+  xla::XlaOp size_1d_tensor = xla::Reshape(size, {1});
+  xla::XlaOp dynamic_iota = xla::CustomCall(
+      size.builder(), "mhlo.dynamic_iota",
+      /*operands=*/{size_1d_tensor}, /*shape*/ shape,
+      /*opaque=*/"{iota_dimension=0}");
+  return xla::ConvertElementType(start, scalar_type) + xla::ConvertElementType(dynamic_iota, scalar_type) * xla::ConvertElementType(step, scalar_type);
+}
+
 }  // namespace torch_xla
