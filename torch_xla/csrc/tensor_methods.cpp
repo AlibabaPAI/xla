@@ -112,6 +112,7 @@
 #include "torch_xla/csrc/ops/scatter_add.h"
 #include "torch_xla/csrc/ops/scatter_reduce.h"
 #include "torch_xla/csrc/ops/select.h"
+#include "torch_xla/csrc/ops/select_symint.h"
 #include "torch_xla/csrc/ops/send.h"
 #include "torch_xla/csrc/ops/sgd_optimizer_step.h"
 #include "torch_xla/csrc/ops/softmax.h"
@@ -167,6 +168,16 @@ torch::lazy::Value MaybeExpand(const torch::lazy::Value& input,
   }
   return torch::lazy::MakeNode<Expand>(
       input, torch::lazy::ToVector<int64_t>(target_shape.dimensions()));
+}
+
+torch::lazy::Value MaybeExpandSymInt(const torch::lazy::Value& input,
+                                     const xla::Shape& target_shape,
+                                     c10::SymIntArrayRef target_size) {
+  if (GetXlaShape(input).dimensions() == target_shape.dimensions()) {
+    return input;
+  }
+  SymIntElements size_elements = SymIntElements(target_size);
+  return torch::lazy::MakeNode<ExpandSymInt>(input, size_elements);
 }
 
 MinMaxValues GetMinMaxValues(const XLATensorPtr& tensor,
@@ -850,9 +861,31 @@ XLATensorPtr addmm(const XLATensorPtr& input, const XLATensorPtr& weight,
 void arange_out(XLATensorPtr& out, const at::Scalar& start,
                 const at::Scalar& end, const at::Scalar& step,
                 at::ScalarType scalar_type) {
-  out->SetIrValue(ARange(start, end, step, scalar_type));
-  // out->SetIrValue(torch::lazy::MakeNode<Iota>());
-  out->SetScalarType(scalar_type);
+  if (start.isSymbolic() || end.isSymbolic() || step.isSymbolic()) {
+    XLA_CHECK(start.isIntegral(/*includeBool=*/false) && end.isIntegral(/*includeBool=*/false) && step.isIntegral(/*includeBool=*/false)) << "Only int start || end || step is supported, got " << start << ", " << end << ", " << step;
+    // corner case
+    if (start.toSymInt() == end.toSymInt()) {
+      out->SetIrValue(ARange(0, 0, 1, scalar_type));
+      out->SetScalarType(scalar_type);
+      return;
+    }
+    xla::PrimitiveType prim_type = MakeXlaPrimitiveType(scalar_type, &out->GetDevice());
+    auto range_size = 1 + (end.toSymInt() - start.toSymInt() - 1) / step.toSymInt(); // ceil
+
+    xla::Shape result_shape = xla::ShapeUtil::MakeShape(
+      prim_type, {GetSymIntUpperBound(range_size)}, {true});
+
+    const torch::lazy::BackendDevice& device = out->GetDevice();
+    torch::lazy::Value size_value = GetSymIntValue(range_size, device);
+    torch::lazy::Value start_value = GetSymIntValue(start.toSymInt(), device);
+    torch::lazy::Value step_value = GetSymIntValue(step.toSymInt(), device);
+
+    out->SetIrValue(DynamicArange(size_value, start_value, step_value, prim_type, result_shape));
+    out->SetScalarType(scalar_type);
+  } else {
+    out->SetIrValue(ARange(start, end, step, scalar_type));
+    out->SetScalarType(scalar_type);
+  }
 }
 
 XLATensorPtr as_strided(const XLATensorPtr& input, std::vector<int64_t> size,
@@ -2511,8 +2544,16 @@ XLATensorPtr rrelu_with_noise_backward(const XLATensorPtr& grad_output,
 XLATensorPtr rsub(const XLATensorPtr& input, const XLATensorPtr& other,
                   const at::Scalar& alpha,
                   c10::optional<at::ScalarType> logical_element_type) {
-  torch::lazy::Value alpha_xla = XLAGraphExecutor::Get()->GetIrValueForScalar(
-      alpha, other->shape(), logical_element_type, other->GetDevice());
+  torch::lazy::Value alpha_xla;
+  if (other->shape().get().is_static()) {
+    alpha_xla = XLAGraphExecutor::Get()->GetIrValueForScalar(
+        alpha, other->shape(), logical_element_type, other->GetDevice());
+  } else {
+    SymIntElements sym_int_elements(other->GetIrValue());
+    alpha_xla = XLAGraphExecutor::Get()->GetIrValueForScalar(
+        alpha, other->shape(), sym_int_elements, logical_element_type,
+        other->GetDevice());
+  }
 
   return input->CreateFrom(
       Rsub(input->GetIrValue(), other->GetIrValue(), alpha_xla),
@@ -2522,13 +2563,52 @@ XLATensorPtr rsub(const XLATensorPtr& input, const XLATensorPtr& other,
 XLATensorPtr rsub(const XLATensorPtr& input, const at::Scalar& other,
                   const at::Scalar& alpha,
                   c10::optional<at::ScalarType> logical_element_type) {
-  torch::lazy::Value alpha_xla = XLAGraphExecutor::Get()->GetIrValueForScalar(
-      alpha, input->shape(), logical_element_type, input->GetDevice());
-  torch::lazy::Value other_xla = XLAGraphExecutor::Get()->GetIrValueForScalar(
-      other, input->shape(), logical_element_type, input->GetDevice());
+  torch::lazy::Value alpha_xla;
+  torch::lazy::Value other_xla;
+  if (input->shape().get().is_static()) {
+    alpha_xla = XLAGraphExecutor::Get()->GetIrValueForScalar(
+        alpha, input->shape(), logical_element_type, input->GetDevice());
+    other_xla = XLAGraphExecutor::Get()->GetIrValueForScalar(
+        other, input->shape(), logical_element_type, input->GetDevice());
+  } else {
+    SymIntElements sym_int_elements(input->GetIrValue());
+    alpha_xla = XLAGraphExecutor::Get()->GetIrValueForScalar(
+        alpha, input->shape(), sym_int_elements, logical_element_type,
+        input->GetDevice());
+    other_xla = XLAGraphExecutor::Get()->GetIrValueForScalar(
+        other, input->shape(), sym_int_elements, logical_element_type,
+        input->GetDevice());
+  }
 
   return input->CreateFrom(Rsub(input->GetIrValue(), other_xla, alpha_xla),
                            logical_element_type);
+}
+
+void copy_symint_(XLATensorPtr& input, c10::SymIntArrayRef input_size,
+                  XLATensorPtr& src) {
+  if (input->GetDevice() == src->GetDevice()) {
+    torch::lazy::Value copy_value;
+    if (input->dtype() == src->dtype()) {
+      copy_value = src->GetIrValue();
+    } else {
+      copy_value = torch::lazy::MakeNode<Cast>(src->GetIrValue(),
+                                               input->dtype(), src->dtype());
+    }
+    input->SetIrValue(MaybeExpandSymInt(copy_value, input->shape(), input_size));
+  } else {
+    auto input_shape = input->shape();
+    at::Tensor src_tensor = src->ToTensor(/*detached=*/true);
+    if (!torch_xla::runtime::util::Equal(src_tensor.sizes(),
+                                         input_shape.get().dimensions())) {
+      src_tensor = src_tensor.expand_symint(input_size);
+    }
+    input->UpdateFromTensor(std::move(src_tensor), /*sync=*/false);
+  }
+
+  // Preserves sharding when copying.
+  if (src->sharding_spec() != nullptr) {
+    input->SetShardingSpec(*src->sharding_spec());
+  }
 }
 
 void copy_(XLATensorPtr& input, XLATensorPtr& src) {
@@ -2634,6 +2714,12 @@ XLATensorPtr slice(const XLATensorPtr& input, int64_t dim, int64_t start,
     return input->CreateFrom(
         torch::lazy::MakeNode<Select>(input->GetIrValue(), dim, 0, 0, step));
   }
+  if (input_shape.get().is_dynamic()) {
+    c10::SymInt start_val;
+    if (start < 0) {
+
+    }
+  }
   start = torch::lazy::GetCanonicalPosition(input_dims, dim, start);
   end = torch::lazy::GetCanonicalPosition(input_dims, dim, end);
   // PyTorch allows tensor[-1:0] to return a 0-dim tensor.
@@ -2650,6 +2736,45 @@ XLATensorPtr slice(const XLATensorPtr& input, int64_t dim, int64_t start,
   }
   return input->CreateFrom(torch::lazy::MakeNode<Select>(
       input->GetIrValue(), dim, start, end, step));
+}
+
+XLATensorPtr slice_symint(const XLATensorPtr& input, int64_t dim, c10::SymInt start,
+                   c10::SymInt end, c10::SymInt step) {
+  auto input_shape = input->shape();
+  dim = torch::lazy::GetCanonicalDimensionIndex(dim, input_shape.get().rank());
+  std::vector<int64_t> input_dims = torch_xla::runtime::util::ToVector<int64_t>(
+      input_shape.get().dimensions());
+  if (input_dims[dim] == 0) {
+    // `GetCanonicalDimensionIndex` doesn't support case where dim size = 0.
+    // So we add a special handling in torch_xla.
+    return input->CreateFrom(
+        torch::lazy::MakeNode<Select>(input->GetIrValue(), dim, 0, 0, 1));
+  }
+
+  XLA_CHECK(
+      !runtime::sys_util::GetEnvBool("XLA_DISABLE_FUNCTIONALIZATION", false));
+
+  int64_t start_upper = GetSymIntUpperBound(start);
+  int64_t end_upper = GetSymIntUpperBound(end);
+
+  // TODO: support this
+  XLA_CHECK(start_upper >= 0 && start_upper <= input_dims[dim]) << "Dynamic slice with start < 0 or start > size is not supported";
+  XLA_CHECK(end_upper >= 0 && end_upper <= input_dims[dim]) << "Dynamic slice with end < 0 or end > size is not supported";
+  XLA_CHECK(start_upper <= end_upper) << "Dynamic slice with start > end is not supported";
+
+  xla::Shape output_shape = SelectSymInt::MakeSelectShape(input->shape(),
+      dim,
+      start_upper,
+      end_upper,
+      GetSymIntUpperBound(step));
+
+  const torch::lazy::BackendDevice& device = input->GetDevice();
+  torch::lazy::Value start_value = GetSymIntValue(start, device);
+  torch::lazy::Value end_value = GetSymIntValue(end, device);
+  torch::lazy::Value step_value = GetSymIntValue(step, device);
+
+  return input->CreateFrom(torch::lazy::MakeNode<SelectSymInt>(
+      input->GetIrValue(), dim, start_value, end_value, step_value, output_shape));
 }
 
 std::tuple<XLATensorPtr, XLATensorPtr> slogdet(const XLATensorPtr& input) {
@@ -2838,10 +2963,22 @@ XLATensorPtr sub(const XLATensorPtr& input, const XLATensorPtr& other,
 XLATensorPtr sub(const XLATensorPtr& input, const at::Scalar& other,
                  const at::Scalar& alpha,
                  c10::optional<at::ScalarType> logical_element_type) {
-  torch::lazy::Value other_xla = XLAGraphExecutor::Get()->GetIrValueForScalar(
-      other, input->shape(), logical_element_type, input->GetDevice());
-  torch::lazy::Value alpha_xla = XLAGraphExecutor::Get()->GetIrValueForScalar(
-      alpha, input->shape(), logical_element_type, input->GetDevice());
+  torch::lazy::Value alpha_xla;
+  torch::lazy::Value other_xla;
+  if (input->shape().get().is_static()) {
+    alpha_xla = XLAGraphExecutor::Get()->GetIrValueForScalar(
+        alpha, input->shape(), logical_element_type, input->GetDevice());
+    other_xla = XLAGraphExecutor::Get()->GetIrValueForScalar(
+        other, input->shape(), logical_element_type, input->GetDevice());
+  } else {
+    SymIntElements sym_int_elements(input->GetIrValue());
+    alpha_xla = XLAGraphExecutor::Get()->GetIrValueForScalar(
+        alpha, input->shape(), sym_int_elements, logical_element_type,
+        input->GetDevice());
+    other_xla = XLAGraphExecutor::Get()->GetIrValueForScalar(
+        other, input->shape(), sym_int_elements, logical_element_type,
+        input->GetDevice());
+  }
 
   return input->CreateFrom(Sub(input->GetIrValue(), other_xla, alpha_xla),
                            logical_element_type);
@@ -3013,6 +3150,16 @@ XLATensorPtr unsqueeze(const XLATensorPtr& input, int64_t dim) {
   return view(input, dimensions);
 }
 
+XLATensorPtr unsqueeze_symint(const XLATensorPtr& input, at::SymIntArrayRef input_sizes, int64_t dim) {
+  torch_xla::runtime::util::MaybeRef<xla::Shape> input_shape = input->shape();
+  int64_t squeeze_dim = torch::lazy::GetCanonicalDimensionIndex(
+      dim, input_shape.get().rank() + 1);
+  std::vector<c10::SymInt> final_sizes;
+  final_sizes.insert(final_sizes.begin(), input_sizes.begin(), input_sizes.end());
+  final_sizes.insert(final_sizes.begin() + dim, c10::SymInt(1));
+  return view_symint(input, c10::SymIntArrayRef(final_sizes.data(), final_sizes.size()));
+}
+
 void unsqueeze_(XLATensorPtr& input, int64_t dim) {
   int squeeze_dim = torch::lazy::GetCanonicalDimensionIndex(
       dim, input->shape().get().rank() + 1);
@@ -3083,6 +3230,10 @@ XLATensorPtr view(const XLATensorPtr& input,
 
 XLATensorPtr view_symint(const XLATensorPtr& input,
                          at::SymIntArrayRef sym_size) {
+  // view of barrier op
+  if (sym_size.empty()) {
+    return view(input, {});
+  }
   auto input_shape = input->shape();
   SymIntElements size_elements(sym_size);
   std::vector<int64_t> complete_dimensions = GetCompleteShape(

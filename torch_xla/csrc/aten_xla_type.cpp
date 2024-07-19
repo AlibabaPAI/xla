@@ -477,7 +477,12 @@ at::Tensor XLANativeFunctions::_copy_from(const at::Tensor& self,
         torch::lazy::CopyTensor(tensor, dst.scalar_type(), /*copy=*/false);
     dst.resize_as_(typed_tensor).copy_(typed_tensor);
   } else {
-    tensor_methods::copy_(dst_tensor, self_tensor);
+    if (dst_tensor->shape().get().is_dynamic()) {
+      XLA_CHECK(self_tensor->shape().get().is_dynamic()) << "self tensor is dynamic!";
+      tensor_methods::copy_symint_(dst_tensor, dst.sym_sizes(), self_tensor);
+    } else {
+      tensor_methods::copy_(dst_tensor, self_tensor);
+    }
     bridge::ReplaceXlaTensor(dst, dst_tensor);
   }
   return dst;
@@ -2859,16 +2864,30 @@ at::Tensor XLANativeFunctions::sigmoid_backward(const at::Tensor& grad_output,
       bridge::GetXlaTensor(grad_output), bridge::GetXlaTensor(output)));
 }
 
-at::Tensor XLANativeFunctions::slice_copy(const at::Tensor& self, int64_t dim,
-                                          c10::optional<int64_t> start,
-                                          c10::optional<int64_t> end,
-                                          int64_t step) {
+at::Tensor XLANativeFunctions::slice_copy_symint(const at::Tensor& self, int64_t dim,
+                                          c10::optional<c10::SymInt> start,
+                                          c10::optional<c10::SymInt> end,
+                                          c10::SymInt step) {
   TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::");
-  int64_t start_val = start.has_value() ? start.value() : 0;
-  int64_t end_val = end.has_value() ? end.value() : INT64_MAX;
+  c10::SymInt start_val = start.has_value() ? start.value() : 0;
+  c10::SymInt end_val;
+  if (end.has_value()) {
+    end_val = end.value();
+    if (!end_val.is_symbolic() && end_val > self.sym_sizes()[dim]) {
+      end_val = self.sym_sizes()[dim];
+    }
+  } else {
+    end_val = self.sym_sizes()[dim];
+  }
+  if (start_val.is_symbolic() || end_val.is_symbolic() || step.is_symbolic()) {
+    return bridge::AtenFromXlaTensor(bridge::SetBaseTensor(
+        tensor_methods::slice_symint(bridge::GetXlaTensor(self), dim, start_val, end_val,
+                              step),
+        self));
+  }
   return bridge::AtenFromXlaTensor(bridge::SetBaseTensor(
-      tensor_methods::slice(bridge::GetXlaTensor(self), dim, start_val, end_val,
-                            step),
+      tensor_methods::slice(bridge::GetXlaTensor(self), dim, start_val.expect_int(), end_val.expect_int(),
+                            step.expect_int()),
       self));
 }
 
@@ -3203,6 +3222,11 @@ at::Tensor& XLANativeFunctions::uniform_(
 at::Tensor XLANativeFunctions::unsqueeze_copy(const at::Tensor& self,
                                               int64_t dim) {
   TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::");
+  XLATensorPtr self_tensor = bridge::GetXlaTensor(self);
+  if (self_tensor->shape().get().is_dynamic()) {
+    return bridge::AtenFromXlaTensor(
+      tensor_methods::unsqueeze_symint(bridge::GetXlaTensor(self), self.sym_sizes(), dim));
+  }
   return bridge::AtenFromXlaTensor(
       tensor_methods::unsqueeze(bridge::GetXlaTensor(self), dim));
 }
@@ -3388,7 +3412,6 @@ at::Tensor XLANativeFunctions::view_copy_symint(const at::Tensor& self,
          "behavior is currently unsupported; if the user believes this must be "
          "supported, please file a feature request against PyTorch/XLA.";
     sym_shape[dyn_dim] = self.sym_numel() / complete_element_count;
-    LOG(INFO) << "view_copy_symint: " << c10::SymIntArrayRef(sym_shape.data(), sym_shape.size()) << ", " << self.sym_numel() << "; " << complete_element_count;
     return bridge::AtenFromXlaTensor(
       tensor_methods::view_symint(xla_input, c10::SymIntArrayRef(sym_shape.data(), sym_shape.size())));
   }
@@ -3800,7 +3823,6 @@ at::Tensor XLANativeFunctions::slice_backward_symint(const at::Tensor& grad_outp
                                               c10::SymIntArrayRef input_sizes,
                                               int64_t dim, c10::SymInt start,
                                               c10::SymInt end, c10::SymInt step) {
-  LOG(INFO) << "slice_backward_symint: " << grad_output.sym_sizes() << ", " << input_sizes;
   // See Note: [Disabling functionalization]
   if (runtime::sys_util::GetEnvBool("XLA_DISABLE_FUNCTIONALIZATION", false)) {
     return at::native::slice_backward(grad_output, C10_AS_INTARRAYREF_SLOW(input_sizes), dim, start.guard_int(__FILE__, __LINE__), end.guard_int(__FILE__, __LINE__),

@@ -72,6 +72,10 @@ inline bool IsDefined(const c10::optional<at::Tensor>& tensor) {
   return tensor.has_value() && tensor.value().defined();
 }
 
+torch::lazy::Value GetSymIntValue(const c10::SymInt& size, const torch::lazy::BackendDevice& device);
+
+int64_t GetSymIntUpperBound(const c10::SymInt& size);
+
 }  // namespace torch_xla
 
 namespace torch {

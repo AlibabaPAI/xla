@@ -15,6 +15,7 @@
 #include "torch_xla/csrc/runtime/debug_macros.h"
 #include "torch_xla/csrc/runtime/sys_util.h"
 #include "torch_xla/csrc/runtime/util.h"
+#include "torch_xla/csrc/shape_helper.h"
 #include "tsl/platform/bfloat16.h"
 #include "xla/client/xla_builder.h"
 #include "xla/literal_util.h"
@@ -133,6 +134,26 @@ class XlaHelpers {
 
   static xla::XlaOp CreateReturnValue(xla::XlaBuilder* builder,
                                       const std::vector<xla::XlaOp>& outputs);
+  
+  static xla::XlaOp CreateOutputDimsTensor(xla::XlaOp operand);
+
+  static xla::XlaOp CreateShapeTensor(const std::vector<xla::XlaOp>& size_ops);
+
+  template <class T>
+  static xla::XlaOp DynamicScalarBroadcast(T scalar_value, xla::PrimitiveType type,
+                                           xla::XlaOp aux_input) {
+    const xla::Shape& input_shape = ShapeHelper::ShapeOfXlaOp(aux_input);
+    xla::Shape output_shape = xla::ShapeUtil::MakeShape(type, input_shape.dimensions(),  runtime::util::ToVector<bool>(input_shape.dynamic_dimensions()));
+    xla::XlaOp scalar_op = ScalarValue<T>(scalar_value, type, aux_input.builder());
+    return xla::DynamicBroadcastInDim(scalar_op, CreateOutputDimsTensor(aux_input), {}, output_shape);
+  }
+
+  template <class T>
+  static xla::XlaOp DynamicScalarBroadcast(T scalar_value,
+                                           xla::XlaOp aux_input) {
+    xla::XlaOp scalar_op = ScalarValue<T>(scalar_value, TypeOfXlaOp(aux_input), aux_input.builder());
+    return xla::DynamicBroadcastInDim(scalar_op, CreateOutputDimsTensor(aux_input), {}, ShapeHelper::ShapeOfXlaOp(aux_input));
+  }
 
   // Creates a scalar broadcasted to a given shape.
   template <class T>
@@ -329,6 +350,10 @@ class XlaHelpers {
   static std::pair<xla::XlaOp, xla::XlaOp>
   ImplicitBroadcastWithUnboundedDynamicShapes(xla::XlaOp op1, xla::XlaOp op2,
                                               const xla::Shape& shape);
+
+  static std::pair<xla::XlaOp, xla::XlaOp>
+  ImplicitBroadcastWithboundedDynamicShapes(
+    xla::XlaOp op1, xla::XlaOp op2, const xla::Shape& shape);
 
   // Retuns the explicit broadcasting specifications on operations between
   // arrays of different ranks.

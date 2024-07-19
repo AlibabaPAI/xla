@@ -1082,4 +1082,21 @@ torch::lazy::NodePtr Mul(const torch::lazy::Value& input,
       std::move(lower_fn));
 }
 
+torch::lazy::NodePtr DynamicArange(const torch::lazy::Value& size,
+                         const torch::lazy::Value& start,
+                         const torch::lazy::Value& step,
+                         xla::PrimitiveType scalar_type,
+                         const xla::Shape& shape) {
+  auto lower_fn = [scalar_type, shape](const XlaNode& node,
+                     LoweringContext* loctx) -> XlaOpVector {
+    xla::XlaOp xla_size = loctx->GetOutputOp(node.operand(0));
+    xla::XlaOp xla_start = loctx->GetOutputOp(node.operand(1));
+    xla::XlaOp xla_end = loctx->GetOutputOp(node.operand(2));
+    return node.ReturnOp(BuildDynamicArange(xla_size, xla_start, xla_end, scalar_type, shape), loctx);
+  };
+  return GenericOp(torch::lazy::OpKind(at::aten::arange), {size, start, step},
+                   shape,
+                   std::move(lower_fn));
+}
+
 }  // namespace torch_xla

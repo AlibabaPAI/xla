@@ -1,5 +1,7 @@
 #include "torch_xla/csrc/ops/select.h"
 
+#include "torch_xla/csrc/data_ops.h"
+#include "torch_xla/csrc/helpers.h"
 #include "torch_xla/csrc/lowering_context.h"
 #include "torch_xla/csrc/ops/xla_ops.h"
 #include "torch_xla/csrc/runtime/debug_macros.h"
@@ -28,9 +30,17 @@ torch::lazy::NodePtr Select::Clone(torch::lazy::OpList operands) const {
 XlaOpVector Select::Lower(LoweringContext* loctx) const {
   xla::XlaOp input = loctx->GetOutputOp(operand(0));
   const xla::Shape& input_shape = ShapeHelper::ShapeOfXlaOp(input);
-  if (!input_shape.is_unbounded_dynamic()) {
+  if (input_shape.is_static()) {
     xla::XlaOp output = xla::SliceInDim(input, start_, end_,
                                         GetStride(start_, end_, stride_), dim_);
+    return ReturnOp(output, loctx);
+  } else if (input_shape.is_bounded_dynamic()) {
+    xla::XlaOp start = XlaHelpers::ScalarValue<int32_t>(start_, input.builder());
+    xla::XlaOp end = XlaHelpers::ScalarValue<int32_t>(end_, input.builder());
+    xla::XlaOp stride = XlaHelpers::ScalarValue<int32_t>(stride_, input.builder());
+    xla::Shape final_shape =
+        MakeSelectShape(input_shape, dim_, start_, end_, stride_);
+    xla::XlaOp output = BuildSelectSymInt(input, dim_, start, end, stride, final_shape);
     return ReturnOp(output, loctx);
   } else {
     // When input has unbounded dynamic dim and target dim is the unbounded

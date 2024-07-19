@@ -414,6 +414,7 @@ symint:
   - slice_backward
   - select_backward
   - select.int
+  - slice_copy.Tensor
   # See Note: [Disabling functionalization]
   - expand
   - view
