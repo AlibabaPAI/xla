@@ -2714,12 +2714,6 @@ XLATensorPtr slice(const XLATensorPtr& input, int64_t dim, int64_t start,
     return input->CreateFrom(
         torch::lazy::MakeNode<Select>(input->GetIrValue(), dim, 0, 0, step));
   }
-  if (input_shape.get().is_dynamic()) {
-    c10::SymInt start_val;
-    if (start < 0) {
-
-    }
-  }
   start = torch::lazy::GetCanonicalPosition(input_dims, dim, start);
   end = torch::lazy::GetCanonicalPosition(input_dims, dim, end);
   // PyTorch allows tensor[-1:0] to return a 0-dim tensor.
