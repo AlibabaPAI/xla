@@ -60,6 +60,9 @@ XlaOpVector ExpandSymInt::Lower(LoweringContext* loctx) const {
   for (int i = 1; i < operands().size(); i++) {
     size_ops.push_back(loctx->GetOutputOp(operand(i)));
   }
+  if (size_ops.empty()) {
+    return ReturnOp(BuildExpand(input, upper_bounds_), loctx);
+  }
   if (XlaHelpers::IsStableHloEnabled()) {
     xla::XlaOp output = BuildExpandSymInt(input, upper_bounds_, size_ops, dynamic_dims_);
     return ReturnOp(output, loctx);

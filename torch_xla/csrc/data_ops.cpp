@@ -465,7 +465,13 @@ xla::XlaOp BuildUnselect(xla::XlaOp target, xla::XlaOp source, int64_t dim,
 
   xla::PrimitiveType pred_type =
       GetXlaPrimitiveTypeForCurrentDevice(xla::PrimitiveType::PRED);
-  xla::XlaOp source_true = XlaHelpers::DynamicScalarBroadcast(1, pred_type, source);
+  xla::XlaOp source_true;
+  if (source_shape.is_dynamic()) {
+    source_true = XlaHelpers::DynamicScalarBroadcast(1, pred_type, source);
+  } else {
+    source_true = XlaHelpers::ScalarBroadcast(
+      1, pred_type, source_shape.dimensions(), source.builder());
+  }
   xla::XlaOp pred_zero = xla::Zero(target.builder(), pred_type);
   xla::XlaOp zero = xla::Zero(target.builder(), target_shape.element_type());
   xla::PaddingConfig padding_config;
