@@ -3422,8 +3422,12 @@ at::Tensor XLANativeFunctions::view_copy_symint(const at::Tensor& self,
   //     << "This view op has dynamic input tensor but static input shape. This "
   //        "behavior is currently unsupported; if the user believes this must be "
   //        "supported, please file a feature request against PyTorch/XLA.";
-  return bridge::AtenFromXlaTensor(
+  if (input_has_dyn_shape) {
+    return bridge::AtenFromXlaTensor(
       tensor_methods::view_symint(xla_input, shape));
+  }
+  return bridge::AtenFromXlaTensor(
+      tensor_methods::view(xla_input, int_shape.value()));
 }
 
 at::Tensor XLANativeFunctions::where(const at::Tensor& condition,
@@ -3660,13 +3664,21 @@ at::Tensor XLANativeFunctions::embedding_symint(const at::Tensor& weight,
                                         scale_grad_by_freq, sparse);
   }
 
-  std::vector<c10::SymInt> final_size;
-  auto indices_sizes = indices.sym_sizes();
-  final_size.insert(final_size.begin(), indices_sizes.begin(), indices_sizes.end());
-  final_size.push_back(weight.sym_sizes()[1]);
+  auto weight_tensor = bridge::GetXlaTensor(weight);
+  auto indices_tensor = bridge::GetXlaTensor(indices);
+
   TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::");
-  return bridge::AtenFromXlaTensor(tensor_methods::embedding_symint(
-      bridge::GetXlaTensor(weight), bridge::GetXlaTensor(indices), final_size, indices.sym_numel()));
+  if (weight_tensor->shape().get().is_dynamic() || 
+      indices_tensor->shape().get().is_dynamic()) {
+    std::vector<c10::SymInt> final_size;
+    auto indices_sizes = indices.sym_sizes();
+    final_size.insert(final_size.begin(), indices_sizes.begin(), indices_sizes.end());
+    final_size.push_back(weight.sym_sizes()[1]);
+    return bridge::AtenFromXlaTensor(tensor_methods::embedding_symint(
+        bridge::GetXlaTensor(weight), bridge::GetXlaTensor(indices), final_size, indices.sym_numel()));
+  }
+  return bridge::AtenFromXlaTensor(tensor_methods::embedding(
+      bridge::GetXlaTensor(weight), bridge::GetXlaTensor(indices)));
 }
 
 at::Tensor XLANativeFunctions::_euclidean_dist(const at::Tensor& x1,
