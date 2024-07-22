@@ -2870,14 +2870,16 @@ at::Tensor XLANativeFunctions::slice_copy_symint(const at::Tensor& self, int64_t
                                           c10::SymInt step) {
   TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::");
   c10::SymInt start_val = start.has_value() ? start.value() : 0;
-  c10::SymInt end_val;
-  if (end.has_value()) {
-    end_val = end.value();
-    if (!end_val.is_symbolic() && end_val > self.sym_sizes()[dim]) {
+  c10::SymInt end_val = end.has_value() ? end.value() : self.sym_sizes()[dim];
+  if (!start_val.is_symbolic() && start_val < 0) {
+    start_val = self.sym_sizes()[dim] + start_val;
+  }
+  if (!end_val.is_symbolic()) {
+    if (end_val > self.sym_sizes()[dim]) {
       end_val = self.sym_sizes()[dim];
+    } else if (end_val < 0) {
+      end_val = self.sym_sizes()[dim] + end_val;
     }
-  } else {
-    end_val = self.sym_sizes()[dim];
   }
   if (start_val.is_symbolic() || end_val.is_symbolic() || step.is_symbolic()) {
     return bridge::AtenFromXlaTensor(bridge::SetBaseTensor(
