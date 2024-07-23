@@ -15,6 +15,7 @@ XLA_EXPERIMENTAL=nonzero:masked_select python3 test/ds/test_dynamic_shape_models
 XLA_EXPERIMENTAL=nonzero:masked_select python3 test/ds/test_dynamic_shapes.py -v
 python3 test/test_autocast.py
 python3 test/dynamo/test_dynamo.py
+python3 test/dynamo/test_dynamo_dynamic_shape.py
 python3 test/spmd/test_spmd_debugging.py
 python3 test/pjrt/test_dtypes.py
 python3 test/pjrt/test_dynamic_plugin_tpu.py
