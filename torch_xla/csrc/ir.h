@@ -112,6 +112,10 @@ class XlaNode : public torch::lazy::Node {
   torch::lazy::hash_t node_hash() const { return node_hash_; }
 
   torch::lazy::hash_t hash() const override {
+    if (shape_hash_ != 0) {
+      auto dag_hash = sharding_hash_ != 0 ? (torch::lazy::HashCombine(dag_hash_, sharding_hash_)) : dag_hash_;
+      return torch::lazy::HashCombine(dag_hash, shape_hash_);
+    }
     if (sharding_hash_ != 0) {
       return torch::lazy::HashCombine(dag_hash_, sharding_hash_);
     }
@@ -146,6 +150,7 @@ class XlaNode : public torch::lazy::Node {
   void MarkBoundedDynamicDimension(uint32_t dim, int64_t bound) {
     xla_shape_.set_dynamic_dimension(dim, true);
     xla_shape_.set_dimensions(dim, bound);
+    shape_hash_ = torch::lazy::Hash(xla_shape_.ToString());
   }
 
   const std::unordered_set<uint32_t>& dynamic_dims() const {
@@ -173,6 +178,7 @@ class XlaNode : public torch::lazy::Node {
   torch::lazy::hash_t node_hash_ = 0;
   torch::lazy::hash_t dag_hash_;
   torch::lazy::hash_t sharding_hash_ = 0;
+  torch::lazy::hash_t shape_hash_ = 0;
 
   // Experimental sharding annotations attached to the IR node.
   std::vector<std::shared_ptr<xla::OpSharding>> output_shardings_;
