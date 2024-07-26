@@ -16,6 +16,7 @@
 #include "torch_xla/csrc/ops/arithmetic_ir_ops.h"
 #include "torch_xla/csrc/ops/constant.h"
 #include "torch_xla/csrc/ops/expand.h"
+#include "torch_xla/csrc/ops/expand_symint.h"
 #include "torch_xla/csrc/ops/infer_output_shape.h"
 #include "torch_xla/csrc/ops/log_softmax_backward.h"
 #include "torch_xla/csrc/ops/permute.h"
@@ -222,7 +223,16 @@ torch::lazy::NodePtr Sigmoid(const torch::lazy::Value& input) {
 
 torch::lazy::NodePtr SigmoidBackward(const torch::lazy::Value& grad_output,
                                      const torch::lazy::Value& output) {
-  torch::lazy::Value scalar_1 = ScalarOp(1, GetXlaShape(output));
+  torch::lazy::Value scalar_1;
+  auto output_shape = GetXlaShape(output);
+  if (output_shape.is_dynamic()) {
+    SymIntElements size_elements(output);
+    scalar_1 = ScalarOp(1, output_shape.element_type());
+    scalar_1 = torch::lazy::MakeNode<ExpandSymInt>(scalar_1, size_elements);
+  } else {
+    scalar_1 = ScalarOp(1, GetXlaShape(output));
+  }
+  
   auto lower_fn = [](const XlaNode& node,
                      LoweringContext* loctx) -> XlaOpVector {
     xla::XlaOp grad_output = loctx->GetOutputOp(node.operand(0));

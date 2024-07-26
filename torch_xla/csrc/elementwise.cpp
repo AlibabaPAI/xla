@@ -59,6 +59,11 @@ xla::XlaOp BuildThreshold(xla::XlaOp input, xla::XlaOp output,
   const xla::Shape& output_shape = ShapeHelper::ShapeOfXlaOp(output);
   xla::XlaOp xla_threshold = XlaHelpers::ScalarValue<float>(
       threshold, input_shape.element_type(), builder);
+  if (input_shape.is_dynamic()) {
+    xla::XlaOp xla_value = XlaHelpers::DynamicScalarBroadcast(value, output_shape.element_type(), input);
+    return xla::Select(xla::Gt(input, xla_threshold), output,
+                       xla_value);
+  }
   xla::XlaOp xla_value = XlaHelpers::ScalarValue<float>(
       value, output_shape.element_type(), builder);
   return xla::Select(xla::Gt(input, xla_threshold), output,

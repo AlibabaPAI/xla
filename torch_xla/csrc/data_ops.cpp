@@ -227,6 +227,7 @@ xla::XlaOp BuildMaskedFillScalar(xla::XlaOp input, xla::XlaOp mask,
   const xla::Shape& input_shape = ShapeHelper::ShapeOfXlaOp(input);
   const xla::Shape& mask_shape = ShapeHelper::ShapeOfXlaOp(mask);
 
+  LOG(INFO) << "BuildMaskedFillScalar: " << input_shape.ToString() << ", " << mask_shape.ToString();
   if (!xla::ShapeUtil::Compatible(input_shape, mask_shape)) {
     xla::Shape shape = XlaHelpers::GetPromotedShape(input_shape, mask_shape);
     if (shape.is_dynamic()) {
