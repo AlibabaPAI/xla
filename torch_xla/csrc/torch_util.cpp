@@ -6,7 +6,7 @@
 #include "torch_xla/csrc/runtime/debug_macros.h"
 #include "torch_xla/csrc/runtime/xla_util.h"
 #include "torch_xla/csrc/tensor.h"
-#include "torch_xla/csrc/ops/ops.h"
+#include "torch_xla/csrc/xla_graph_executor.h"
 
 namespace torch_xla {
 
@@ -76,8 +76,8 @@ at::Tensor MaybeWrapTensorToFunctional(const at::Tensor& tensor) {
 
 torch::lazy::Value GetSymIntValue(const c10::SymInt& size, const torch::lazy::BackendDevice& device) {
   if (auto s = size.maybe_as_int()) {
-    return ScalarOp(at::Scalar(*s), GetShapeDimensionType(&device));
-    // return XLAGraphExecutor::Get()->GetIrValueForScalar(at::Scalar(*s), GetShapeDimensionType(&device), device);
+    // return ScalarOp(at::Scalar(*s), GetShapeDimensionType(&device));
+    return XLAGraphExecutor::Get()->GetIrValueForScalar(at::Scalar(*s), GetShapeDimensionType(&device), device);
   }
   auto* lazySymNode = dynamic_cast<XLASymNodeImpl*>(size.toSymNodeImplUnowned());
   torch::lazy::NodePtr size_node = lazySymNode->node();

@@ -917,6 +917,54 @@ xla::XlaOp XlaHelpers::CreateShapeTensor(const std::vector<xla::XlaOp>& size_ops
                         /*shape*/shape);
 }
 
+xla::XlaOp XlaHelpers::DynamicBoundedBroadcast(
+    xla::XlaOp input, xla::XlaOp aux_input,
+    const std::vector<int64_t>& aux_input_dimensions) {
+  const xla::Shape& input_shape = ShapeHelper::ShapeOfXlaOp(input);
+  const xla::Shape& aux_input_shape = ShapeHelper::ShapeOfXlaOp(aux_input);
+  std::vector<int64_t> output_dimensions;
+  std::vector<bool> output_dynamic;
+  // Collect the dimension sizes and dynamic dimensions corresponding to the
+  // final broadcasted shape.
+  for (auto dim : aux_input_dimensions) {
+    output_dimensions.push_back(aux_input_shape.dimensions(dim));
+    output_dynamic.push_back(aux_input_shape.is_dynamic_dimension(dim));
+  }
+
+  for (int dim = 0; dim < input_shape.rank(); dim++) {
+    output_dimensions.push_back(input_shape.dimensions(dim));
+    output_dynamic.push_back(input_shape.is_dynamic_dimension(dim));
+  }
+
+  std::vector<xla::XlaOp> get_dim_ops;
+  for (auto dim : aux_input_dimensions) {
+    if (aux_input_shape.is_dynamic_dimension(dim)) {
+      get_dim_ops.push_back(xla::GetDimensionSize(aux_input, dim));
+    } else {
+      get_dim_ops.push_back(
+          XlaHelpers::ScalarValue<int32_t>(aux_input_shape.dimensions(dim),
+                                           aux_input.builder()));
+    }
+  }
+
+  for (int dim = 0; dim < input_shape.rank(); dim++) {
+    if (input_shape.is_dynamic_dimension(dim)) {
+      get_dim_ops.push_back(xla::GetDimensionSize(input, dim));
+    } else {
+      get_dim_ops.push_back(
+          XlaHelpers::ScalarValue<int32_t>(input_shape.dimensions(dim),
+                                           input.builder()));
+    }
+  }
+
+  // Create shape tensor
+  auto shape_tensor = XlaHelpers::CreateShapeTensor(get_dim_ops);
+
+  xla::Shape final_shape = xla::ShapeUtil::MakeShape(
+      input_shape.element_type(), output_dimensions, output_dynamic);
+  return DynamicBroadcastInDim(input, final_shape, shape_tensor);
+}
+
 xla::XlaOp XlaHelpers::DynamicUnboundedBroadcast(
     xla::XlaOp input, xla::XlaOp aux_input,
     const std::vector<int64_t>& aux_input_dimensions) {

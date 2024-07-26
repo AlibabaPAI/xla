@@ -201,6 +201,10 @@ class XlaHelpers {
   static xla::XlaOp DynamicBoundedReshape(
     xla::XlaOp input, const std::vector<xla::XlaOp>& shape_ops, const xla::Shape& shape);
 
+
+  static xla::XlaOp DynamicBoundedBroadcast(
+    xla::XlaOp input, xla::XlaOp aux_input,
+    const std::vector<int64_t>& aux_input_dimensions);
   // Broadcasts 'input' shape to
   // shape(aux_input)[aux_input_dimensions] x shape(input).
   // This method is used as a replacement for xla::Broadcast when unbounded

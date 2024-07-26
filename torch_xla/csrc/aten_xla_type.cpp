@@ -2897,6 +2897,7 @@ at::Tensor XLANativeFunctions::slice_scatter(
     const at::Tensor& base, const at::Tensor& mutated_view, int64_t dim,
     c10::optional<int64_t> start, c10::optional<int64_t> end, int64_t step) {
   TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::");
+  LOG(INFO) << "slice_scatter: " << start.value() << ", " << end.value();
   auto base_ = bridge::GetXlaTensor(base);
   auto mutated_view_ = bridge::GetXlaTensor(mutated_view);
   int64_t start_val = start.has_value() ? start.value() : 0;
@@ -3842,8 +3843,12 @@ at::Tensor XLANativeFunctions::slice_backward_symint(const at::Tensor& grad_outp
     return at::native::slice_backward(grad_output, C10_AS_INTARRAYREF_SLOW(input_sizes), dim, start.guard_int(__FILE__, __LINE__), end.guard_int(__FILE__, __LINE__),
                                       step.guard_int(__FILE__, __LINE__));
   }
-  return at::functionalization::functionalize_aten_op_symint<ATEN_OP(
-      slice_backward)>::call(grad_output, input_sizes, dim, start, end, step);
+  at::Scalar fill_value = grad_output.dtype() == at::kBool ? false : 0;
+  at::Tensor grad_input = full_symint(input_sizes, fill_value, at::typeMetaToScalarType(grad_output.dtype()), grad_output.layout(), grad_output.device(), false);
+  // TODO: we may need to support slice_scatter_symint
+  return slice_scatter(grad_input, grad_output, dim, start.guard_int(__FILE__, __LINE__), end.guard_int(__FILE__, __LINE__), step.guard_int(__FILE__, __LINE__));
+  // return at::functionalization::functionalize_aten_op_symint<ATEN_OP(
+  //     slice_backward)>::call(grad_output, input_sizes, dim, start, end, step);
 }
 
 at::Tensor XLANativeFunctions::permute(const at::Tensor& self,
