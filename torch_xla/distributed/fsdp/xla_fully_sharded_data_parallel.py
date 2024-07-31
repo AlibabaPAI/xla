@@ -894,9 +894,7 @@ class XlaFullyShardedDataParallel(nn.Module):
     """Reset instance so :func:`_lazy_init` will run on the next forward."""
     self._is_root: Optional[bool] = None
     self._all_sharded_params: Optional[Parameter] = None
-    self._output_pre_backward_hook_registered: Optional[Set] = None
     self._backward_opt_barrier_tensors: Optional[List] = None
-    self._backward_opt_barrier_tensor_ids: Optional[Set] = None
     self.reshard_after_forward = self._orig_reshard_after_forward
     self._delayed_reduce_scatter: Optional[Dict] = None
     self._backward_opt_grads: Optional[Dict] = None
@@ -960,16 +958,12 @@ class XlaFullyShardedDataParallel(nn.Module):
     And a list to apply optimization barrier on backward pass tensors.
     """
     assert self._is_root, "This should only be called on the root"
-    self._output_pre_backward_hook_registered = set()
     self._backward_opt_barrier_tensors = []
-    self._backward_opt_barrier_tensor_ids = set()
     self._delayed_reduce_scatter = {}
     self._backward_opt_grads = {}
     for n, m in self.named_modules():
       if n != "" and isinstance(m, XlaFullyShardedDataParallel):
-        m._output_pre_backward_hook_registered = self._output_pre_backward_hook_registered
         m._backward_opt_barrier_tensors = self._backward_opt_barrier_tensors
-        m._backward_opt_barrier_tensor_ids = self._backward_opt_barrier_tensor_ids
         m._delayed_reduce_scatter = self._delayed_reduce_scatter
         m._backward_opt_grads = self._backward_opt_grads
 
@@ -1065,14 +1059,11 @@ class XlaFullyShardedDataParallel(nn.Module):
     """
     Add tensor to backward pass optimization barrier list if it is not there.
     """
-    if id(tensor) not in self._backward_opt_barrier_tensor_ids:
-      self._backward_opt_barrier_tensor_ids.add(id(tensor))
-      self._backward_opt_barrier_tensors.append(tensor)
+    self._backward_opt_barrier_tensors.append(tensor)
 
   def _clear_backward_opt_barrier_lists(self) -> None:
     """Reset the backward pass optimization barrier list"""
     self._backward_opt_barrier_tensors.clear()
-    self._backward_opt_barrier_tensor_ids.clear()
 
   def _register_grad_opt_barrier_hooks(
       self, dependency_tensors: List[torch.Tensor]) -> None:
@@ -1185,11 +1176,8 @@ class XlaFullyShardedDataParallel(nn.Module):
       # We don't register the pre_backward hook on the same tensor that has been
       # returned from an inner FSDP, unless it is the first one.
       nonlocal _registered
-      assert self._output_pre_backward_hook_registered is not None
-      if t.requires_grad and (_registered == 0 or id(t)
-                              not in self._output_pre_backward_hook_registered):
+      if t.requires_grad:
         t.register_hook(_pre_backward_hook)
-        self._output_pre_backward_hook_registered.add(id(t))
         _registered += 1
       return t
 
@@ -1442,8 +1430,6 @@ class XlaFullyShardedDataParallel(nn.Module):
           # reset this flag for cases like "one forward pass + multiple backward passes"
           self._post_backward_callback_queued = False
           # clear this list for next iteration
-          assert self._output_pre_backward_hook_registered is not None
-          self._output_pre_backward_hook_registered.clear()
           if self.optimization_barrier_in_backward:
             # Ensure that backward pass ops of feature gradients, parameter
             # gradient and sharding, and full-param freeing (which are usually
