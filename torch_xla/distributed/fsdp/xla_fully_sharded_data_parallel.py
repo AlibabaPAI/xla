@@ -35,7 +35,7 @@ import torch_xla
 import torch_xla.core.xla_model as xm
 
 from .xla_flatten_params_wrapper import XlaFlattenParamsWrapper
-from .utils import dummy_all_gather, dummy_all_reduce, dummy_reduce_scatter, apply_xla_patch_to_nn_linear, autograd_module
+from .utils import dummy_all_gather, dummy_all_reduce, dummy_reduce_scatter, apply_xla_patch_to_nn_linear, autograd_module, get_tensor_id
 from .wrap import recursive_wrap
 from ._init_utils import _materialize_module
 
@@ -1065,8 +1065,8 @@ class XlaFullyShardedDataParallel(nn.Module):
     """
     Add tensor to backward pass optimization barrier list if it is not there.
     """
-    if id(tensor) not in self._backward_opt_barrier_tensor_ids:
-      self._backward_opt_barrier_tensor_ids.add(id(tensor))
+    if get_tensor_id(tensor) not in self._backward_opt_barrier_tensor_ids:
+      self._backward_opt_barrier_tensor_ids.add(get_tensor_id(tensor))
       self._backward_opt_barrier_tensors.append(tensor)
 
   def _clear_backward_opt_barrier_lists(self) -> None:
@@ -1186,10 +1186,10 @@ class XlaFullyShardedDataParallel(nn.Module):
       # returned from an inner FSDP, unless it is the first one.
       nonlocal _registered
       assert self._output_pre_backward_hook_registered is not None
-      if t.requires_grad and (_registered == 0 or id(t)
+      if t.requires_grad and (_registered == 0 or get_tensor_id(t)
                               not in self._output_pre_backward_hook_registered):
         t.register_hook(_pre_backward_hook)
-        self._output_pre_backward_hook_registered.add(id(t))
+        self._output_pre_backward_hook_registered.add(get_tensor_id(t))
         _registered += 1
       return t
 
@@ -1333,8 +1333,8 @@ class XlaFullyShardedDataParallel(nn.Module):
         p_shard.grad += reduced_grad
 
     if self.opt_flatten_overlap:
-      self._backward_opt_grads[id(param)] = grad
-      self._delayed_reduce_scatter[id(param)] = _reduce_scatter
+      self._backward_opt_grads[get_tensor_id(param)] = grad
+      self._delayed_reduce_scatter[get_tensor_id(param)] = _reduce_scatter
     else:
       _reduce_scatter()
 
