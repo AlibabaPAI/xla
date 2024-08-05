@@ -3,6 +3,7 @@ from types import MethodType
 import torch
 from torch.distributed.utils import _apply_to_tensors
 from torch.utils.checkpoint import check_backward_validity, detach_variable
+import torch_xla
 import torch_xla.core.xla_model as xm
 from torch_xla.utils.checkpoint import checkpoint
 
@@ -291,3 +292,7 @@ def autograd_module(module):
       _xla_autograd_forward_no_kwargs, module)
   module.forward = MethodType(_forward_with_autograd, module)
   return module
+
+
+def get_tensor_id(t):
+  return torch_xla._XLAC._xla_get_tensor_id(t)
