@@ -2897,7 +2897,6 @@ at::Tensor XLANativeFunctions::slice_scatter(
     const at::Tensor& base, const at::Tensor& mutated_view, int64_t dim,
     c10::optional<int64_t> start, c10::optional<int64_t> end, int64_t step) {
   TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::");
-  LOG(INFO) << "slice_scatter: " << start.value() << ", " << end.value();
   auto base_ = bridge::GetXlaTensor(base);
   auto mutated_view_ = bridge::GetXlaTensor(mutated_view);
   int64_t start_val = start.has_value() ? start.value() : 0;

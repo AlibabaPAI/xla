@@ -105,7 +105,6 @@ xla::XlaOp BuildViewSymInt(xla::XlaOp input,
                                    {upper_bounds}, {dynamic_dims});
   std::vector<xla::XlaOp> complete_size_ops;
   size_t curr_size_ops_index = 0;
-  LOG(INFO) << "build shape: " << absl::StrJoin(upper_bounds, ",") << "; " << absl::StrJoin(dynamic_dims, ",");
   for (size_t i = 0; i < dynamic_dims.size(); i++) {
     if (dynamic_dims[i]) {
       complete_size_ops.push_back(size_ops[curr_size_ops_index++]);
@@ -227,7 +226,6 @@ xla::XlaOp BuildMaskedFillScalar(xla::XlaOp input, xla::XlaOp mask,
   const xla::Shape& input_shape = ShapeHelper::ShapeOfXlaOp(input);
   const xla::Shape& mask_shape = ShapeHelper::ShapeOfXlaOp(mask);
 
-  LOG(INFO) << "BuildMaskedFillScalar: " << input_shape.ToString() << ", " << mask_shape.ToString();
   if (!xla::ShapeUtil::Compatible(input_shape, mask_shape)) {
     xla::Shape shape = XlaHelpers::GetPromotedShape(input_shape, mask_shape);
     if (shape.is_dynamic()) {
