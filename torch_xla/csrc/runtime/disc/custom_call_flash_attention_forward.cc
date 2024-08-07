@@ -57,6 +57,7 @@ struct FlashAttentionForwardParams {
   // The dimensions.
   int b, seqlen_q, seqlen_k, d, seqlen_q_rounded, seqlen_k_rounded, d_rounded;
 
+  int total_q;
   int total_k;
 
   // The scaling factors for the kernel.
@@ -73,10 +74,16 @@ struct FlashAttentionForwardParams {
 
   bool is_bf16;
   bool is_causal;
+  int window_size_left;
+  int window_size_right;
+  int alibi_slopes_batch_stride;
+  bool enable_alibi_slopes;
+  bool is_seqlens_k_cumulative;
+  int num_splits;
 
   void FromString(const std::string& str) {
     std::vector<std::string> params_list = absl::StrSplit(str, "|");
-    TORCH_CHECK(params_list.size() >= 31);  // at least 31 variables
+    TORCH_CHECK(params_list.size() >= 38);  // at least 38 variables
     absl::SimpleAtoi(params_list[0], &this->q_batch_stride);
     absl::SimpleAtoi(params_list[1], &this->k_batch_stride);
     absl::SimpleAtoi(params_list[2], &this->v_batch_stride);
@@ -86,30 +93,37 @@ struct FlashAttentionForwardParams {
     absl::SimpleAtoi(params_list[6], &this->q_head_stride);
     absl::SimpleAtoi(params_list[7], &this->k_head_stride);
     absl::SimpleAtoi(params_list[8], &this->v_head_stride);
-    absl::SimpleAtoi(params_list[9], &this->total_k);
-    absl::SimpleAtoi(params_list[10], &this->h);
-    absl::SimpleAtoi(params_list[11], &this->h_k);
-    absl::SimpleAtoi(params_list[12], &this->h_h_k_ratio);
-    absl::SimpleAtoi(params_list[13], &this->o_batch_stride);
-    absl::SimpleAtoi(params_list[14], &this->o_row_stride);
-    absl::SimpleAtoi(params_list[15], &this->o_head_stride);
-    absl::SimpleAtoi(params_list[16], &this->b);
-    absl::SimpleAtoi(params_list[17], &this->seqlen_q);
-    absl::SimpleAtoi(params_list[18], &this->seqlen_k);
-    absl::SimpleAtoi(params_list[19], &this->d);
-    absl::SimpleAtoi(params_list[20], &this->seqlen_q_rounded);
-    absl::SimpleAtoi(params_list[21], &this->seqlen_k_rounded);
-    absl::SimpleAtoi(params_list[22], &this->d_rounded);
-    absl::SimpleAtof(params_list[23], &this->scale_softmax);
-    absl::SimpleAtof(params_list[24], &this->scale_softmax_log2);
-    absl::SimpleAtof(params_list[25], &this->p_dropout);
+    absl::SimpleAtoi(params_list[9], &this->total_q);
+    absl::SimpleAtoi(params_list[10], &this->total_k);
+    absl::SimpleAtoi(params_list[11], &this->h);
+    absl::SimpleAtoi(params_list[12], &this->h_k);
+    absl::SimpleAtoi(params_list[13], &this->h_h_k_ratio);
+    absl::SimpleAtoi(params_list[14], &this->o_batch_stride);
+    absl::SimpleAtoi(params_list[15], &this->o_row_stride);
+    absl::SimpleAtoi(params_list[16], &this->o_head_stride);
+    absl::SimpleAtoi(params_list[17], &this->b);
+    absl::SimpleAtoi(params_list[18], &this->seqlen_q);
+    absl::SimpleAtoi(params_list[19], &this->seqlen_k);
+    absl::SimpleAtoi(params_list[20], &this->d);
+    absl::SimpleAtoi(params_list[21], &this->seqlen_q_rounded);
+    absl::SimpleAtoi(params_list[22], &this->seqlen_k_rounded);
+    absl::SimpleAtoi(params_list[23], &this->d_rounded);
+    absl::SimpleAtof(params_list[24], &this->scale_softmax);
+    absl::SimpleAtof(params_list[25], &this->scale_softmax_log2);
+    absl::SimpleAtof(params_list[26], &this->p_dropout);
     uint32_t tmp;
-    absl::SimpleAtoi(params_list[26], &tmp);
+    absl::SimpleAtoi(params_list[27], &tmp);
     this->p_dropout_in_uint8_t = uint8_t(tmp);
-    absl::SimpleAtof(params_list[27], &this->rp_dropout);
-    absl::SimpleAtof(params_list[28], &this->scale_softmax_rp_dropout);
-    absl::SimpleAtob(params_list[29], &this->is_bf16);
-    absl::SimpleAtob(params_list[30], &this->is_causal);
+    absl::SimpleAtof(params_list[28], &this->rp_dropout);
+    absl::SimpleAtof(params_list[29], &this->scale_softmax_rp_dropout);
+    absl::SimpleAtob(params_list[30], &this->is_bf16);
+    absl::SimpleAtob(params_list[31], &this->is_causal);
+    absl::SimpleAtoi(params_list[32], &this->window_size_left);
+    absl::SimpleAtoi(params_list[33], &this->window_size_right);
+    absl::SimpleAtoi(params_list[34], &this->alibi_slopes_batch_stride);
+    absl::SimpleAtob(params_list[35], &this->is_seqlens_k_cumulative);
+    absl::SimpleAtoi(params_list[36], &this->num_splits);
+    absl::SimpleAtob(params_list[37], &this->enable_alibi_slopes);
   }
 };
 
@@ -122,13 +136,14 @@ struct FlashAttentionForwardParams {
 //  result[0] = softmax_lse  // this is output
 //  result[1] = out_for_output // this is output
 template <typename T_IN, typename SOFT_MAX_TYPE, int M>
-std::tuple<MemRefType<SOFT_MAX_TYPE, M>, MemRefType<T_IN, M>>
-custom_call_flash_attention_forward(ExecutionContext* ctx, void* stream_handle,
+std::tuple<MemRefType<SOFT_MAX_TYPE, M>, MemRefType<T_IN, M>, MemRefType<uint64_t, 1>>
+custom_call_flash_attention_forward_impl(ExecutionContext* ctx, void* stream_handle,
                                     MemRefType<T_IN, M> q,
                                     MemRefType<T_IN, M> k,
                                     MemRefType<T_IN, M> v,
                                     MemRefType<int32_t, 1> seqlens_q,
                                     MemRefType<int32_t, 1> seqlens_k,
+                                    void* alibi_slopes_ptr,
                                     void* customAttrs) {
   auto attr = getOrParsePDLAttr(ctx, customAttrs,
                                 "custom_call_flash_attention_forward");
@@ -163,6 +178,12 @@ custom_call_flash_attention_forward(ExecutionContext* ctx, void* stream_handle,
       gpu_driver->alloc(ctx, output_element_count * sizeof(T_IN)));
   auto output = assignMemRef<T_IN, M>(output_ptr, q.sizes);
 
+  auto rng_state_ptr = static_cast<uint64_t*>(
+      gpu_driver->alloc(ctx, 2 * sizeof(uint64_t)));
+  auto rng_state = assignMemRef<uint64_t, 1>(output_ptr, std::vector<size_t>{2});
+
+  cudaMemsetAsync(rng_state_ptr, 0, 2 * sizeof(uint64_t), gpu_stream);
+
   FlashAttentionForwardParams params;
   params.FromString(std::move(backend_config));
 
@@ -190,6 +211,8 @@ custom_call_flash_attention_forward(ExecutionContext* ctx, void* stream_handle,
 
   launch_params.cu_seqlens_q = seqlens_q.data;
   launch_params.cu_seqlens_k = seqlens_k.data;
+  launch_params.alibi_slopes_ptr = alibi_slopes_ptr;
+  launch_params.alibi_slopes_batch_stride = params.alibi_slopes_batch_stride;
 
   // P = softmax(QK^T)
   launch_params.p_ptr = nullptr;  // no softmax returned always
@@ -219,6 +242,16 @@ custom_call_flash_attention_forward(ExecutionContext* ctx, void* stream_handle,
   launch_params.scale_softmax_rp_dropout = params.scale_softmax_rp_dropout;
 
   launch_params.is_causal = params.is_causal;
+  launch_params.window_size_left = params.window_size_left;
+  launch_params.window_size_right = params.window_size_right;
+
+  launch_params.is_seqlens_k_cumulative = params.is_seqlens_k_cumulative;
+
+  // set params splitkv
+  launch_params.num_splits = params.num_splits;
+
+  // Forward kernel will populate memory with the seed and offset.
+  launch_params.rng_state = reinterpret_cast<uint64_t*>(rng_state_ptr);
 
   if ((1.f - launch_params.p_dropout) > 0.0) {
     // number of times random will be generated per thread, to offset philox
@@ -233,20 +266,68 @@ custom_call_flash_attention_forward(ExecutionContext* ctx, void* stream_handle,
   }
 
   FP16_SWITCH(!launch_params.is_bf16, [&] {
-    FWD_HEADDIM_SWITCH(launch_params.d, [&] {
+    HEADDIM_SWITCH(launch_params.d, [&] {
+      // TODO(wenting.swt): support split_kv
       run_mha_fwd_<elem_type, kHeadDim>(launch_params, gpu_stream);
     });
   });
 
-  return std::make_tuple(softmax_lse, output);
+  return std::make_tuple(softmax_lse, output, rng_state);
+}
+
+template <typename T_IN, typename SOFT_MAX_TYPE, int M>
+std::tuple<MemRefType<SOFT_MAX_TYPE, M>, MemRefType<T_IN, M>, MemRefType<uint64_t, 1>>
+custom_call_flash_attention_forward_noalibi(ExecutionContext* ctx, void* stream_handle,
+                                    MemRefType<T_IN, M> q,
+                                    MemRefType<T_IN, M> k,
+                                    MemRefType<T_IN, M> v,
+                                    MemRefType<int32_t, 1> seqlens_q,
+                                    MemRefType<int32_t, 1> seqlens_k,
+                                    void* customAttrs) {
+  return custom_call_flash_attention_forward_impl<T_IN, SOFT_MAX_TYPE, M>(
+      ctx, stream_handle, q, k, v, seqlens_q, seqlens_k, nullptr, customAttrs);
+}
+
+template <typename T_IN, typename SOFT_MAX_TYPE, int M>
+std::tuple<MemRefType<SOFT_MAX_TYPE, M>, MemRefType<T_IN, M>, MemRefType<uint64_t, 1>>
+custom_call_flash_attention_forward_alibi_v1(ExecutionContext* ctx, void* stream_handle,
+                                    MemRefType<T_IN, M> q,
+                                    MemRefType<T_IN, M> k,
+                                    MemRefType<T_IN, M> v,
+                                    MemRefType<int32_t, 1> seqlens_q,
+                                    MemRefType<int32_t, 1> seqlens_k,
+                                    MemRefType<float, 1> alibi_slopes,
+                                    void* customAttrs) {
+  return custom_call_flash_attention_forward_impl<T_IN, SOFT_MAX_TYPE, M>(
+      ctx, stream_handle, q, k, v, seqlens_q, seqlens_k, alibi_slopes.data, customAttrs);
+}
+
+template <typename T_IN, typename SOFT_MAX_TYPE, int M>
+std::tuple<MemRefType<SOFT_MAX_TYPE, M>, MemRefType<T_IN, M>, MemRefType<uint64_t, 1>>
+custom_call_flash_attention_forward_alibi_v2(ExecutionContext* ctx, void* stream_handle,
+                                    MemRefType<T_IN, M> q,
+                                    MemRefType<T_IN, M> k,
+                                    MemRefType<T_IN, M> v,
+                                    MemRefType<int32_t, 1> seqlens_q,
+                                    MemRefType<int32_t, 1> seqlens_k,
+                                    MemRefType<float, 2> alibi_slopes,
+                                    void* customAttrs) {
+  return custom_call_flash_attention_forward_impl<T_IN, SOFT_MAX_TYPE, M>(
+      ctx, stream_handle, q, k, v, seqlens_q, seqlens_k, alibi_slopes.data, customAttrs);
 }
 
 TAO_RAL_API("custom_call_flash_attention_forward", "gpu",
-            custom_call_flash_attention_forward<float, float, 3>);
+            custom_call_flash_attention_forward_noalibi<Eigen::half, float, 3>);
 TAO_RAL_API("custom_call_flash_attention_forward", "gpu",
-            custom_call_flash_attention_forward<Eigen::half, float, 3>);
+            custom_call_flash_attention_forward_alibi_v1<Eigen::half, float, 3>);
 TAO_RAL_API("custom_call_flash_attention_forward", "gpu",
-            custom_call_flash_attention_forward<bfloat16, float, 3>);
+            custom_call_flash_attention_forward_alibi_v2<Eigen::half, float, 3>);
+TAO_RAL_API("custom_call_flash_attention_forward", "gpu",
+            custom_call_flash_attention_forward_noalibi<bfloat16, float, 3>);
+TAO_RAL_API("custom_call_flash_attention_forward", "gpu",
+            custom_call_flash_attention_forward_alibi_v1<bfloat16, float, 3>);
+TAO_RAL_API("custom_call_flash_attention_forward", "gpu",
+            custom_call_flash_attention_forward_alibi_v2<bfloat16, float, 3>);
 
 }  // namespace ral
 }  // namespace tao

@@ -31,6 +31,8 @@ ptxla_cc_library(
         "@torch//:libtorch_cuda",
         "@flash_attn//:headers",
         "@flash_attn//:flash_attn_cuda",
+        "//torch_xla/csrc/runtime:env_vars",
+        "//torch_xla/csrc/runtime:sys_util",
     ],
     copts = [
         "-DGOOGLE_CUDA",
