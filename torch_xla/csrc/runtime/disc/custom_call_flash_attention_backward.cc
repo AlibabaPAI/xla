@@ -191,7 +191,7 @@ custom_call_flash_attention_backward_impl(
     MemRefType<T_IN, M> q, MemRefType<T_IN, M> k, MemRefType<T_IN, M> v,
     MemRefType<T_IN, M> out, MemRefType<SOFT_MAX_TYPE, M> softmax_lse,
     MemRefType<int32_t, 1> seqlens_q, MemRefType<int32_t, 1> seqlens_k,
-    MemRefType<uint64_t, 1> rng_state, void* alibi_slopes_ptr,
+    MemRefType<int64_t, 1> rng_state, void* alibi_slopes_ptr,
     void* customAttrs) {
   auto attr = getOrParsePDLAttr(ctx, customAttrs,
                                 "custom_call_flash_attention_backward");
@@ -410,7 +410,7 @@ custom_call_flash_attention_backward_noalibi(
     MemRefType<T_IN, M> q, MemRefType<T_IN, M> k, MemRefType<T_IN, M> v,
     MemRefType<T_IN, M> out, MemRefType<SOFT_MAX_TYPE, M> softmax_lse,
     MemRefType<int32_t, 1> seqlens_q, MemRefType<int32_t, 1> seqlens_k,
-    MemRefType<uint64_t, 1> rng_state, void* customAttrs) {
+    MemRefType<int64_t, 1> rng_state, void* customAttrs) {
   return custom_call_flash_attention_backward_impl<T_IN, SOFT_MAX_TYPE, M>(
       ctx, stream_handle, dout, q, k, v, out, softmax_lse, seqlens_q, seqlens_k,
       rng_state, nullptr, customAttrs);
@@ -424,7 +424,7 @@ custom_call_flash_attention_backward_alibi_v1(
     MemRefType<T_IN, M> q, MemRefType<T_IN, M> k, MemRefType<T_IN, M> v,
     MemRefType<T_IN, M> out, MemRefType<SOFT_MAX_TYPE, M> softmax_lse,
     MemRefType<int32_t, 1> seqlens_q, MemRefType<int32_t, 1> seqlens_k,
-    MemRefType<uint64_t, 1> rng_state, MemRefType<float, 1> alibi_slopes,
+    MemRefType<int64_t, 1> rng_state, MemRefType<float, 1> alibi_slopes,
     void* customAttrs) {
   return custom_call_flash_attention_backward_impl<T_IN, SOFT_MAX_TYPE, M>(
       ctx, stream_handle, dout, q, k, v, out, softmax_lse, seqlens_q, seqlens_k,
@@ -439,7 +439,7 @@ custom_call_flash_attention_backward_alibi_v2(
     MemRefType<T_IN, M> q, MemRefType<T_IN, M> k, MemRefType<T_IN, M> v,
     MemRefType<T_IN, M> out, MemRefType<SOFT_MAX_TYPE, M> softmax_lse,
     MemRefType<int32_t, 1> seqlens_q, MemRefType<int32_t, 1> seqlens_k,
-    MemRefType<uint64_t, 1> rng_state, MemRefType<float, 2> alibi_slopes,
+    MemRefType<int64_t, 1> rng_state, MemRefType<float, 2> alibi_slopes,
     void* customAttrs) {
   return custom_call_flash_attention_backward_impl<T_IN, SOFT_MAX_TYPE, M>(
       ctx, stream_handle, dout, q, k, v, out, softmax_lse, seqlens_q, seqlens_k,

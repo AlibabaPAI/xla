@@ -137,7 +137,7 @@ struct FlashAttentionForwardParams {
 //  result[1] = out_for_output // this is output
 template <typename T_IN, typename SOFT_MAX_TYPE, int M>
 std::tuple<MemRefType<SOFT_MAX_TYPE, M>, MemRefType<T_IN, M>,
-           MemRefType<uint64_t, 1>>
+           MemRefType<int64_t, 1>>
 custom_call_flash_attention_forward_impl(
     ExecutionContext* ctx, void* stream_handle, MemRefType<T_IN, M> q,
     MemRefType<T_IN, M> k, MemRefType<T_IN, M> v,
@@ -177,11 +177,11 @@ custom_call_flash_attention_forward_impl(
   auto output = assignMemRef<T_IN, M>(output_ptr, q.sizes);
 
   auto rng_state_ptr =
-      static_cast<uint64_t*>(gpu_driver->alloc(ctx, 2 * sizeof(uint64_t)));
+      static_cast<int64_t*>(gpu_driver->alloc(ctx, 2 * sizeof(int64_t)));
   auto rng_state =
-      assignMemRef<uint64_t, 1>(output_ptr, std::vector<size_t>{2});
+      assignMemRef<int64_t, 1>(rng_state_ptr, std::vector<size_t>{2});
 
-  cudaMemsetAsync(rng_state_ptr, 0, 2 * sizeof(uint64_t), gpu_stream);
+  cudaMemsetAsync(rng_state_ptr, 0, 2 * sizeof(int64_t), gpu_stream);
 
   FlashAttentionForwardParams params;
   params.FromString(std::move(backend_config));
@@ -276,7 +276,7 @@ custom_call_flash_attention_forward_impl(
 
 template <typename T_IN, typename SOFT_MAX_TYPE, int M>
 std::tuple<MemRefType<SOFT_MAX_TYPE, M>, MemRefType<T_IN, M>,
-           MemRefType<uint64_t, 1>>
+           MemRefType<int64_t, 1>>
 custom_call_flash_attention_forward_noalibi(
     ExecutionContext* ctx, void* stream_handle, MemRefType<T_IN, M> q,
     MemRefType<T_IN, M> k, MemRefType<T_IN, M> v,
@@ -288,7 +288,7 @@ custom_call_flash_attention_forward_noalibi(
 
 template <typename T_IN, typename SOFT_MAX_TYPE, int M>
 std::tuple<MemRefType<SOFT_MAX_TYPE, M>, MemRefType<T_IN, M>,
-           MemRefType<uint64_t, 1>>
+           MemRefType<int64_t, 1>>
 custom_call_flash_attention_forward_alibi_v1(
     ExecutionContext* ctx, void* stream_handle, MemRefType<T_IN, M> q,
     MemRefType<T_IN, M> k, MemRefType<T_IN, M> v,
@@ -301,7 +301,7 @@ custom_call_flash_attention_forward_alibi_v1(
 
 template <typename T_IN, typename SOFT_MAX_TYPE, int M>
 std::tuple<MemRefType<SOFT_MAX_TYPE, M>, MemRefType<T_IN, M>,
-           MemRefType<uint64_t, 1>>
+           MemRefType<int64_t, 1>>
 custom_call_flash_attention_forward_alibi_v2(
     ExecutionContext* ctx, void* stream_handle, MemRefType<T_IN, M> q,
     MemRefType<T_IN, M> k, MemRefType<T_IN, M> v,
