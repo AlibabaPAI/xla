@@ -191,7 +191,8 @@ custom_call_flash_attention_backward_impl(
     MemRefType<T_IN, M> q, MemRefType<T_IN, M> k, MemRefType<T_IN, M> v,
     MemRefType<T_IN, M> out, MemRefType<SOFT_MAX_TYPE, M> softmax_lse,
     MemRefType<int32_t, 1> seqlens_q, MemRefType<int32_t, 1> seqlens_k,
-    MemRefType<uint64_t, 1> rng_state, void* alibi_slopes_ptr, void* customAttrs) {
+    MemRefType<uint64_t, 1> rng_state, void* alibi_slopes_ptr,
+    void* customAttrs) {
   auto attr = getOrParsePDLAttr(ctx, customAttrs,
                                 "custom_call_flash_attention_backward");
   if (!attr) {
@@ -411,7 +412,8 @@ custom_call_flash_attention_backward_noalibi(
     MemRefType<int32_t, 1> seqlens_q, MemRefType<int32_t, 1> seqlens_k,
     MemRefType<uint64_t, 1> rng_state, void* customAttrs) {
   return custom_call_flash_attention_backward_impl<T_IN, SOFT_MAX_TYPE, M>(
-      ctx, stream_handle, dout, q, k, v, out, softmax_lse, seqlens_q, seqlens_k, rng_state, nullptr, customAttrs);
+      ctx, stream_handle, dout, q, k, v, out, softmax_lse, seqlens_q, seqlens_k,
+      rng_state, nullptr, customAttrs);
 }
 
 template <typename T_IN, typename SOFT_MAX_TYPE, int M>
@@ -425,7 +427,8 @@ custom_call_flash_attention_backward_alibi_v1(
     MemRefType<uint64_t, 1> rng_state, MemRefType<float, 1> alibi_slopes,
     void* customAttrs) {
   return custom_call_flash_attention_backward_impl<T_IN, SOFT_MAX_TYPE, M>(
-      ctx, stream_handle, dout, q, k, v, out, softmax_lse, seqlens_q, seqlens_k, rng_state, alibi_slopes.data, customAttrs);
+      ctx, stream_handle, dout, q, k, v, out, softmax_lse, seqlens_q, seqlens_k,
+      rng_state, alibi_slopes.data, customAttrs);
 }
 
 template <typename T_IN, typename SOFT_MAX_TYPE, int M>
@@ -439,15 +442,19 @@ custom_call_flash_attention_backward_alibi_v2(
     MemRefType<uint64_t, 1> rng_state, MemRefType<float, 2> alibi_slopes,
     void* customAttrs) {
   return custom_call_flash_attention_backward_impl<T_IN, SOFT_MAX_TYPE, M>(
-      ctx, stream_handle, dout, q, k, v, out, softmax_lse, seqlens_q, seqlens_k, rng_state, alibi_slopes.data, customAttrs);
+      ctx, stream_handle, dout, q, k, v, out, softmax_lse, seqlens_q, seqlens_k,
+      rng_state, alibi_slopes.data, customAttrs);
 }
 
-TAO_RAL_API("custom_call_flash_attention_backward", "gpu",
-            custom_call_flash_attention_backward_noalibi<Eigen::half, float, 3>);
-TAO_RAL_API("custom_call_flash_attention_backward", "gpu",
-            custom_call_flash_attention_backward_alibi_v1<Eigen::half, float, 3>);
-TAO_RAL_API("custom_call_flash_attention_backward", "gpu",
-            custom_call_flash_attention_backward_alibi_v2<Eigen::half, float, 3>);
+TAO_RAL_API(
+    "custom_call_flash_attention_backward", "gpu",
+    custom_call_flash_attention_backward_noalibi<Eigen::half, float, 3>);
+TAO_RAL_API(
+    "custom_call_flash_attention_backward", "gpu",
+    custom_call_flash_attention_backward_alibi_v1<Eigen::half, float, 3>);
+TAO_RAL_API(
+    "custom_call_flash_attention_backward", "gpu",
+    custom_call_flash_attention_backward_alibi_v2<Eigen::half, float, 3>);
 TAO_RAL_API("custom_call_flash_attention_backward", "gpu",
             custom_call_flash_attention_backward_noalibi<bfloat16, float, 3>);
 TAO_RAL_API("custom_call_flash_attention_backward", "gpu",

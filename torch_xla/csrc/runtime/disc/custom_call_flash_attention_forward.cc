@@ -136,15 +136,13 @@ struct FlashAttentionForwardParams {
 //  result[0] = softmax_lse  // this is output
 //  result[1] = out_for_output // this is output
 template <typename T_IN, typename SOFT_MAX_TYPE, int M>
-std::tuple<MemRefType<SOFT_MAX_TYPE, M>, MemRefType<T_IN, M>, MemRefType<uint64_t, 1>>
-custom_call_flash_attention_forward_impl(ExecutionContext* ctx, void* stream_handle,
-                                    MemRefType<T_IN, M> q,
-                                    MemRefType<T_IN, M> k,
-                                    MemRefType<T_IN, M> v,
-                                    MemRefType<int32_t, 1> seqlens_q,
-                                    MemRefType<int32_t, 1> seqlens_k,
-                                    void* alibi_slopes_ptr,
-                                    void* customAttrs) {
+std::tuple<MemRefType<SOFT_MAX_TYPE, M>, MemRefType<T_IN, M>,
+           MemRefType<uint64_t, 1>>
+custom_call_flash_attention_forward_impl(
+    ExecutionContext* ctx, void* stream_handle, MemRefType<T_IN, M> q,
+    MemRefType<T_IN, M> k, MemRefType<T_IN, M> v,
+    MemRefType<int32_t, 1> seqlens_q, MemRefType<int32_t, 1> seqlens_k,
+    void* alibi_slopes_ptr, void* customAttrs) {
   auto attr = getOrParsePDLAttr(ctx, customAttrs,
                                 "custom_call_flash_attention_forward");
   if (!attr) {
@@ -178,9 +176,10 @@ custom_call_flash_attention_forward_impl(ExecutionContext* ctx, void* stream_han
       gpu_driver->alloc(ctx, output_element_count * sizeof(T_IN)));
   auto output = assignMemRef<T_IN, M>(output_ptr, q.sizes);
 
-  auto rng_state_ptr = static_cast<uint64_t*>(
-      gpu_driver->alloc(ctx, 2 * sizeof(uint64_t)));
-  auto rng_state = assignMemRef<uint64_t, 1>(output_ptr, std::vector<size_t>{2});
+  auto rng_state_ptr =
+      static_cast<uint64_t*>(gpu_driver->alloc(ctx, 2 * sizeof(uint64_t)));
+  auto rng_state =
+      assignMemRef<uint64_t, 1>(output_ptr, std::vector<size_t>{2});
 
   cudaMemsetAsync(rng_state_ptr, 0, 2 * sizeof(uint64_t), gpu_stream);
 
@@ -276,52 +275,51 @@ custom_call_flash_attention_forward_impl(ExecutionContext* ctx, void* stream_han
 }
 
 template <typename T_IN, typename SOFT_MAX_TYPE, int M>
-std::tuple<MemRefType<SOFT_MAX_TYPE, M>, MemRefType<T_IN, M>, MemRefType<uint64_t, 1>>
-custom_call_flash_attention_forward_noalibi(ExecutionContext* ctx, void* stream_handle,
-                                    MemRefType<T_IN, M> q,
-                                    MemRefType<T_IN, M> k,
-                                    MemRefType<T_IN, M> v,
-                                    MemRefType<int32_t, 1> seqlens_q,
-                                    MemRefType<int32_t, 1> seqlens_k,
-                                    void* customAttrs) {
+std::tuple<MemRefType<SOFT_MAX_TYPE, M>, MemRefType<T_IN, M>,
+           MemRefType<uint64_t, 1>>
+custom_call_flash_attention_forward_noalibi(
+    ExecutionContext* ctx, void* stream_handle, MemRefType<T_IN, M> q,
+    MemRefType<T_IN, M> k, MemRefType<T_IN, M> v,
+    MemRefType<int32_t, 1> seqlens_q, MemRefType<int32_t, 1> seqlens_k,
+    void* customAttrs) {
   return custom_call_flash_attention_forward_impl<T_IN, SOFT_MAX_TYPE, M>(
       ctx, stream_handle, q, k, v, seqlens_q, seqlens_k, nullptr, customAttrs);
 }
 
 template <typename T_IN, typename SOFT_MAX_TYPE, int M>
-std::tuple<MemRefType<SOFT_MAX_TYPE, M>, MemRefType<T_IN, M>, MemRefType<uint64_t, 1>>
-custom_call_flash_attention_forward_alibi_v1(ExecutionContext* ctx, void* stream_handle,
-                                    MemRefType<T_IN, M> q,
-                                    MemRefType<T_IN, M> k,
-                                    MemRefType<T_IN, M> v,
-                                    MemRefType<int32_t, 1> seqlens_q,
-                                    MemRefType<int32_t, 1> seqlens_k,
-                                    MemRefType<float, 1> alibi_slopes,
-                                    void* customAttrs) {
+std::tuple<MemRefType<SOFT_MAX_TYPE, M>, MemRefType<T_IN, M>,
+           MemRefType<uint64_t, 1>>
+custom_call_flash_attention_forward_alibi_v1(
+    ExecutionContext* ctx, void* stream_handle, MemRefType<T_IN, M> q,
+    MemRefType<T_IN, M> k, MemRefType<T_IN, M> v,
+    MemRefType<int32_t, 1> seqlens_q, MemRefType<int32_t, 1> seqlens_k,
+    MemRefType<float, 1> alibi_slopes, void* customAttrs) {
   return custom_call_flash_attention_forward_impl<T_IN, SOFT_MAX_TYPE, M>(
-      ctx, stream_handle, q, k, v, seqlens_q, seqlens_k, alibi_slopes.data, customAttrs);
+      ctx, stream_handle, q, k, v, seqlens_q, seqlens_k, alibi_slopes.data,
+      customAttrs);
 }
 
 template <typename T_IN, typename SOFT_MAX_TYPE, int M>
-std::tuple<MemRefType<SOFT_MAX_TYPE, M>, MemRefType<T_IN, M>, MemRefType<uint64_t, 1>>
-custom_call_flash_attention_forward_alibi_v2(ExecutionContext* ctx, void* stream_handle,
-                                    MemRefType<T_IN, M> q,
-                                    MemRefType<T_IN, M> k,
-                                    MemRefType<T_IN, M> v,
-                                    MemRefType<int32_t, 1> seqlens_q,
-                                    MemRefType<int32_t, 1> seqlens_k,
-                                    MemRefType<float, 2> alibi_slopes,
-                                    void* customAttrs) {
+std::tuple<MemRefType<SOFT_MAX_TYPE, M>, MemRefType<T_IN, M>,
+           MemRefType<uint64_t, 1>>
+custom_call_flash_attention_forward_alibi_v2(
+    ExecutionContext* ctx, void* stream_handle, MemRefType<T_IN, M> q,
+    MemRefType<T_IN, M> k, MemRefType<T_IN, M> v,
+    MemRefType<int32_t, 1> seqlens_q, MemRefType<int32_t, 1> seqlens_k,
+    MemRefType<float, 2> alibi_slopes, void* customAttrs) {
   return custom_call_flash_attention_forward_impl<T_IN, SOFT_MAX_TYPE, M>(
-      ctx, stream_handle, q, k, v, seqlens_q, seqlens_k, alibi_slopes.data, customAttrs);
+      ctx, stream_handle, q, k, v, seqlens_q, seqlens_k, alibi_slopes.data,
+      customAttrs);
 }
 
 TAO_RAL_API("custom_call_flash_attention_forward", "gpu",
             custom_call_flash_attention_forward_noalibi<Eigen::half, float, 3>);
-TAO_RAL_API("custom_call_flash_attention_forward", "gpu",
-            custom_call_flash_attention_forward_alibi_v1<Eigen::half, float, 3>);
-TAO_RAL_API("custom_call_flash_attention_forward", "gpu",
-            custom_call_flash_attention_forward_alibi_v2<Eigen::half, float, 3>);
+TAO_RAL_API(
+    "custom_call_flash_attention_forward", "gpu",
+    custom_call_flash_attention_forward_alibi_v1<Eigen::half, float, 3>);
+TAO_RAL_API(
+    "custom_call_flash_attention_forward", "gpu",
+    custom_call_flash_attention_forward_alibi_v2<Eigen::half, float, 3>);
 TAO_RAL_API("custom_call_flash_attention_forward", "gpu",
             custom_call_flash_attention_forward_noalibi<bfloat16, float, 3>);
 TAO_RAL_API("custom_call_flash_attention_forward", "gpu",
