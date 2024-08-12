@@ -12,6 +12,7 @@ class InputOutputAliasesTest(unittest.TestCase):
 
   def test_non_view(self):
     xla_device = xm.xla_device()
+    met.clear_all()
     # This is a special case where we want to sync t1's and t2's
     # value since they will have device_data ir instead of XLAData.
     # HLO looks like
@@ -32,6 +33,18 @@ class InputOutputAliasesTest(unittest.TestCase):
     xm.mark_step()
 
     self.assertEqual(met.metric_data("InputOutputAliasCount")[1], 4.0)
+
+  def test_aliasing_across_custom_inplace(self):
+    xla_device = xm.xla_device()
+    met.clear_all()
+    t1 = torch.randn(4, 5).to(xla_device)
+    t1 *= t1
+    xm.mark_step()
+    self.assertEqual(met.metric_data("InputOutputAliasCount")[1], 1.0)
+    xm.optimization_barrier_([t1])
+    t1 *= 100
+    xm.mark_step()
+    self.assertEqual(met.metric_data("InputOutputAliasCount")[1], 2.0)
 
 
 if __name__ == '__main__':
