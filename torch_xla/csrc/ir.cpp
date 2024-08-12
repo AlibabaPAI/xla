@@ -101,7 +101,8 @@ XlaNode::XlaNode(torch::lazy::OpKind op, torch::lazy::Shape shape,
                  torch::lazy::hash_t hash_seed)
     : torch::lazy::Node(op, shape, num_outputs),
       xla_shape_(std::move(xla_shape)),
-      node_hash_(GetOpHash(op, xla_shape_, hash_seed)),
+      node_hash_(torch::lazy::HashCombine(op.hash(), hash_seed)),
+      shape_hash_(torch::lazy::Hash(xla_shape_.ToString())),
       dag_hash_(node_hash_) {}
 
 XlaNode::XlaNode(torch::lazy::OpKind op, xla::Shape xla_shape,

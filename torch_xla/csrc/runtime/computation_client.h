@@ -71,6 +71,11 @@ class ComputationClient {
       should_donate_buffer_ = should_donate_buffer;
     }
 
+    void MarkBoundedDynamicDimension(uint32_t dim, int64_t bound) {
+      xla_shape_.set_dynamic_dimension(dim, true);
+      xla_shape_.set_dimensions(dim, bound);
+    }
+
     virtual std::string ToString() const = 0;
 
     virtual bool HasSharding() const = 0;
