@@ -26,13 +26,12 @@ ptxla_cc_library(
         "@disc_compiler//:disc_custom_op",
         "@disc_compiler//:headers",
         "@local_config_cuda//cuda:cuda_headers",
-        "@local_config_nccl//:nccl",
+        "@nccl_archive//:nccl_headers",
         "@torch//:libc10",
         "@torch//:libc10_cuda",
         "@torch//:libtorch_cuda",
         "@flash_attn//:headers",
         "@flash_attn//:flash_attn_cuda",
-
     ],
     copts = [
         "-DGOOGLE_CUDA",
