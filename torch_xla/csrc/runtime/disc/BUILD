@@ -26,11 +26,13 @@ ptxla_cc_library(
         "@disc_compiler//:disc_custom_op",
         "@disc_compiler//:headers",
         "@local_config_cuda//cuda:cuda_headers",
+        "@local_config_nccl//:nccl",
         "@torch//:libc10",
         "@torch//:libc10_cuda",
         "@torch//:libtorch_cuda",
         "@flash_attn//:headers",
         "@flash_attn//:flash_attn_cuda",
+
     ],
     copts = [
         "-DGOOGLE_CUDA",
@@ -58,6 +60,8 @@ ptxla_cc_library(
         ":disc_ral",
         ":disc_utils",
         "//torch_xla/csrc/runtime:tf_logging",
+        "//torch_xla/csrc/runtime:sys_util",
+        "//torch_xla/csrc/runtime:env_vars",
         "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Parser",
