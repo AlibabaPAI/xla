@@ -203,6 +203,8 @@ class XLATensor : public torch::lazy::LazyTensor {
   void SetScalarType(c10::optional<at::ScalarType> logical_element_type);
 
   void MarkDynamicDimension(uint32_t dim);
+  void MarkBoundedDynamicDimension(const std::vector<uint32_t>& dims,
+                                   const std::vector<uint32_t>& bounds);
   // We don't use the upstream shape to provide xla::shape.
   runtime::util::MaybeRef<xla::Shape> shape() const;
 
