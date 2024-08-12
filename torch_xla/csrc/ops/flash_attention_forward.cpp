@@ -23,7 +23,7 @@ xla::Shape NodeOutputShape(int batch_size, int num_heads, int seqlen_q,
       xla::PrimitiveType::F32, {batch_size, num_heads, seqlen_q});
   xla::Shape out_shape = GetXlaShape(q);
   xla::Shape rng_state_shape =
-      xla::ShapeUtil::MakeShape(xla::PrimitiveType::U64, {2});
+      xla::ShapeUtil::MakeShape(xla::PrimitiveType::S64, {2});
   return xla::ShapeUtil::MakeTupleShape(
       {softmax_lse_shape, out_shape, rng_state_shape});
 }
