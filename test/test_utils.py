@@ -18,7 +18,6 @@ _IS_DISC_BACKEND = os.environ.get(
 
 
 def is_disc_backend():
-  # return True
   return _IS_DISC_BACKEND
 
 
