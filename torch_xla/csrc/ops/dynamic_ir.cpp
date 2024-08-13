@@ -40,9 +40,6 @@ SizeNode::SizeNode(torch::lazy::Value input, size_t dim)
 };
 
 int64_t SizeNode::getDynamicValue() const {
-  if (runtime::sys_util::GetEnvBool("NUMERIC_SYM", false)) {
-    return upper_bound_;
-  }
   if (dynamic_value_computed_) {
     TORCH_LAZY_COUNTER("CachedSizeNodeValue", 1);
     return runtime_size_;
@@ -86,9 +83,6 @@ SizeAdd::SizeAdd(torch::lazy::Value a, torch::lazy::Value b)
 };
 
 int64_t SizeAdd::getDynamicValue() const {
-  if (runtime::sys_util::GetEnvBool("NUMERIC_SYM", false)) {
-    return upper_bound_;
-  }
   const torch::lazy::DimensionNode* dim_node_0 = DimCast(operand(0));
   const torch::lazy::DimensionNode* dim_node_1 = DimCast(operand(1));
   XLA_CHECK(dim_node_0);
@@ -119,9 +113,6 @@ SizeSub::SizeSub(torch::lazy::Value a, torch::lazy::Value b)
 };
 
 int64_t SizeSub::getDynamicValue() const {
-  if (runtime::sys_util::GetEnvBool("NUMERIC_SYM", false)) {
-    return upper_bound_;
-  }
   const torch::lazy::DimensionNode* dim_node_0 = DimCast(operand(0));
   const torch::lazy::DimensionNode* dim_node_1 = DimCast(operand(1));
   XLA_CHECK(dim_node_0);
@@ -147,15 +138,14 @@ SizeEq::SizeEq(torch::lazy::Value a, torch::lazy::Value b)
   const torch::lazy::DimensionNode* dim_node_1 = DimCast(operand(1));
   XLA_CHECK(dim_node_0);
   XLA_CHECK(dim_node_1);
-  upper_bound_ = dim_node_0->getStaticValue() == dim_node_1->getStaticValue() ? 1 : 0;
+  upper_bound_ =
+      dim_node_0->getStaticValue() == dim_node_1->getStaticValue() ? 1 : 0;
 };
 
 int64_t SizeEq::getDynamicValue() const {
-  if (runtime::sys_util::GetEnvBool("NUMERIC_SYM", false)) {
+  if (runtime::sys_util::GetEnvBool("USE_BOUND_FOR_SHAPE_COMPARE", false)) {
     return upper_bound_;
   }
-  LOG(INFO) << "trigger size eq";
-  return 1;
   if (operand(0) == operand(1)) {
     return 1;
   }
@@ -178,11 +168,12 @@ SizeNe::SizeNe(torch::lazy::Value a, torch::lazy::Value b)
   const torch::lazy::DimensionNode* dim_node_1 = DimCast(operand(1));
   XLA_CHECK(dim_node_0);
   XLA_CHECK(dim_node_1);
-  upper_bound_ = dim_node_0->getStaticValue() != dim_node_1->getStaticValue() ? 1 : 0;
+  upper_bound_ =
+      dim_node_0->getStaticValue() != dim_node_1->getStaticValue() ? 1 : 0;
 };
 
 int64_t SizeNe::getDynamicValue() const {
-  if (runtime::sys_util::GetEnvBool("NUMERIC_SYM", false)) {
+  if (runtime::sys_util::GetEnvBool("USE_BOUND_FOR_SHAPE_COMPARE", false)) {
     return upper_bound_;
   }
   const torch::lazy::DimensionNode* dim_node_0 = DimCast(operand(0));
@@ -204,9 +195,14 @@ SizeGe::SizeGe(torch::lazy::Value a, torch::lazy::Value b)
   const torch::lazy::DimensionNode* dim_node_1 = DimCast(operand(1));
   XLA_CHECK(dim_node_0);
   XLA_CHECK(dim_node_1);
+  upper_bound_ =
+      dim_node_0->getStaticValue() >= dim_node_1->getStaticValue() ? 1 : 0;
 };
 
 int64_t SizeGe::getDynamicValue() const {
+  if (runtime::sys_util::GetEnvBool("USE_BOUND_FOR_SHAPE_COMPARE", false)) {
+    return upper_bound_;
+  }
   const torch::lazy::DimensionNode* dim_node_0 = DimCast(operand(0));
   const torch::lazy::DimensionNode* dim_node_1 = DimCast(operand(1));
   XLA_CHECK(dim_node_0);
@@ -226,11 +222,12 @@ SizeLt::SizeLt(torch::lazy::Value a, torch::lazy::Value b)
   const torch::lazy::DimensionNode* dim_node_1 = DimCast(operand(1));
   XLA_CHECK(dim_node_0);
   XLA_CHECK(dim_node_1);
-  upper_bound_ = dim_node_0->getStaticValue() < dim_node_1->getStaticValue() ? 1 : 0;
+  upper_bound_ =
+      dim_node_0->getStaticValue() < dim_node_1->getStaticValue() ? 1 : 0;
 };
 
 int64_t SizeLt::getDynamicValue() const {
-  if (runtime::sys_util::GetEnvBool("NUMERIC_SYM", false)) {
+  if (runtime::sys_util::GetEnvBool("USE_BOUND_FOR_SHAPE_COMPARE", false)) {
     return upper_bound_;
   }
   const torch::lazy::DimensionNode* dim_node_0 = DimCast(operand(0));

@@ -719,6 +719,7 @@ c10::SymNode XLASymNodeImpl::mod(const c10::SymNode& other) {
 }
 
 c10::SymNode XLASymNodeImpl::eq(const c10::SymNode& other) {
+  TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::size_");
   auto p_other = dynamic_cast<XLASymNodeImpl*>(other.get());
   XLA_CHECK(is_int()) << __FUNCTION__ << " with non-int NYI";
   XLA_CHECK(p_other->is_int()) << __FUNCTION__ << " with non-int NYI";
@@ -877,8 +878,6 @@ c10::SymNode XLASymNodeImpl::wrap_bool(bool num) {
 
 int64_t XLASymNodeImpl::guard_int(const char* file, int64_t line) {
   return int_();
-  XLA_CHECK(false) << "XLASymNodeImpl::" << __FUNCTION__
-                   << " has not been implemented.";
 }
 
 double XLASymNodeImpl::guard_float(const char* file, int64_t line) {
@@ -935,19 +934,23 @@ void XLATensor::MarkDynamicDimension(uint32_t dim) {
   xla_node->MarkDynamicDimension(dim);
 }
 
-void XLATensor::MarkBoundedDynamicDimension(const std::vector<uint32_t>& dims,
-                                            const std::vector<uint32_t>& bounds) {
-  auto* xla_node = dynamic_cast<XlaNode*>(GetIrValue().node.get());
+void XLATensor::MarkBoundedDynamicDimension(
+    const std::vector<uint32_t>& dims, const std::vector<uint32_t>& bounds) {
+  auto* ir_node = GetIrValue().node.get();
+  auto* xla_node = dynamic_cast<XlaNode*>(ir_node);
   torch::lazy::BackendDataPtr backend_data = CurrentDataHandle();
   if (backend_data == nullptr) {
-    backend_data = torch::lazy::getBackend()->GetComputationDataFromNode(
-          GetIrValue().node.get());
+    backend_data =
+        torch::lazy::getBackend()->GetComputationDataFromNode(ir_node);
   }
   for (int i = 0; i < dims.size(); i++) {
     xla_node->MarkBoundedDynamicDimension(dims[i], bounds[i]);
-    std::dynamic_pointer_cast<runtime::ComputationClient::Data>(backend_data)->MarkBoundedDynamicDimension(dims[i], bounds[i]);
+    if (backend_data) {
+      std::dynamic_pointer_cast<runtime::ComputationClient::Data>(backend_data)
+          ->MarkBoundedDynamicDimension(dims[i], bounds[i]);
+    }
   }
-  // 
+  // Update generation to XLATensorImpl::SetupSymSizeProperties
   data()->generation += 1;
 }
 

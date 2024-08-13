@@ -70,6 +70,7 @@ class SizeEq : public XlaNode, public torch::lazy::DimensionNode {
     // TODO: not sure we will ever need it?
     TORCH_CHECK(false, "Lowering comparison nodes isn't supported yet!");
   }
+
  private:
   int64_t upper_bound_;
 };
@@ -87,6 +88,7 @@ class SizeNe : public XlaNode, public torch::lazy::DimensionNode {
     // TODO: not sure we will ever need it?
     TORCH_CHECK(false, "Lowering comparison nodes isn't supported yet!");
   }
+
  private:
   int64_t upper_bound_;
 };
@@ -104,6 +106,9 @@ class SizeGe : public XlaNode, public torch::lazy::DimensionNode {
     // TODO: not sure we will ever need it?
     TORCH_CHECK(false, "Lowering comparison nodes isn't supported yet!");
   }
+
+ private:
+  int64_t upper_bound_;
 };
 
 class SizeLt : public XlaNode, public torch::lazy::DimensionNode {
@@ -119,6 +124,7 @@ class SizeLt : public XlaNode, public torch::lazy::DimensionNode {
     // TODO: not sure we will ever need it?
     TORCH_CHECK(false, "Lowering comparison nodes isn't supported yet!");
   }
+
  private:
   int64_t upper_bound_;
 };

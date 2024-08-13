@@ -585,6 +585,13 @@ XLANativeFunctions::_linalg_slogdet(const at::Tensor& self) {
 
 at::Tensor XLANativeFunctions::_log_softmax(const at::Tensor& self, int64_t dim,
                                             bool half_to_float) {
+  XLATensorPtr self_tensor = bridge::GetXlaTensor(self);
+  if (self_tensor->shape().get().is_dynamic()) {
+    XLA_CHECK(!runtime::sys_util::GetEnvBool("XLA_DISABLE_FUNCTIONALIZATION", false))
+        << "FUNCTIONALIZATION should be enabled when using _log_softmax for symint tensor";
+    return at::functionalization::functionalize_aten_op<ATEN_OP(
+        _log_softmax)>::call(self, dim, half_to_float);
+  }
   TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::");
   auto self_meta = to_meta(self);
   auto out_meta = at::meta::_log_softmax(self_meta, dim, half_to_float);
