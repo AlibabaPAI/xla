@@ -723,6 +723,7 @@ c10::SymNode XLASymNodeImpl::mod(const c10::SymNode& other) {
 }
 
 c10::SymNode XLASymNodeImpl::eq(const c10::SymNode& other) {
+  TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::size_");
   auto p_other = dynamic_cast<XLASymNodeImpl*>(other.get());
   XLA_CHECK(is_int()) << __FUNCTION__ << " with non-int NYI";
   XLA_CHECK(p_other->is_int()) << __FUNCTION__ << " with non-int NYI";
