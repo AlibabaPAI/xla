@@ -11,7 +11,7 @@ namespace runtime {
 
 class DISCComputationClient : public ComputationClient {
  public:
-  const std::string DefaultDevicePrefix = "GPU:";
+  const std::string DefaultDevicePrefix = "CUDA:";
 
   DISCComputationClient();
   ~DISCComputationClient();
