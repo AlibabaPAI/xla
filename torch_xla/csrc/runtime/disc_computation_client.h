@@ -11,8 +11,6 @@ namespace runtime {
 
 class DISCComputationClient : public ComputationClient {
  public:
-  const std::string DefaultDevicePrefix = "CUDA:";
-
   DISCComputationClient();
   ~DISCComputationClient();
 
@@ -142,6 +140,7 @@ class DISCComputationClient : public ComputationClient {
   int world_size_;
   int local_rank_;
   int global_rank_;
+  std::string device_type_;
   struct DISCData : public Data {
     DISCData(std::string device, xla::Shape device_shape)
         : Data(std::move(device), std::move(device_shape)) {}
