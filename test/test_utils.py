@@ -13,8 +13,7 @@ import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.utils.utils as xu
 
-_IS_DISC_BACKEND = os.environ.get(
-    'DISC_DEVICE', '0').upper() in ['ON', '1', 'YES', 'TRUE', 'Y']
+_IS_DISC_BACKEND = 'DISC_DEVICE' in os.environ
 
 
 def is_disc_backend():
