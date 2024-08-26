@@ -447,6 +447,12 @@ xla::XlaOp BuildMatMul(xla::XlaOp lhs, xla::XlaOp rhs, xla::XlaOp bias) {
       std::iota(aux_input_dimensions.begin(), aux_input_dimensions.end(), 0);
       bias = XlaHelpers::DynamicUnboundedBroadcast(bias, dot,
                                                    aux_input_dimensions);
+    } else if (dot_shape.is_dynamic()) {
+      std::vector<int64_t> aux_input_dimensions(dot_shape.rank() -
+                                                bias_shape.rank());
+      std::iota(aux_input_dimensions.begin(), aux_input_dimensions.end(), 0);
+      bias =
+          XlaHelpers::DynamicBoundedBroadcast(bias, dot, aux_input_dimensions);
     } else {
       bias = BuildExpand(bias, dot_shape.dimensions());
     }
@@ -1271,6 +1277,20 @@ xla::XlaOp BuildTpuCustomCall(const std::vector<xla::XlaOp>& inputs,
                                    /*call_target_name=*/"tpu_custom_call",
                                    inputs, output_shape_impl, input_shapes,
                                    payload);
+}
+
+xla::XlaOp BuildDynamicArange(const xla::XlaOp& size, const xla::XlaOp& start,
+                              const xla::XlaOp& step,
+                              xla::PrimitiveType scalar_type,
+                              const xla::Shape& shape) {
+  xla::XlaOp size_1d_tensor = xla::Reshape(size, {1});
+  xla::XlaOp dynamic_iota =
+      xla::CustomCall(size.builder(), "mhlo.dynamic_iota",
+                      /*operands=*/{size_1d_tensor}, /*shape*/ shape,
+                      /*opaque=*/"{iota_dimension=0}");
+  return xla::ConvertElementType(start, scalar_type) +
+         xla::ConvertElementType(dynamic_iota, scalar_type) *
+             xla::ConvertElementType(step, scalar_type);
 }
 
 }  // namespace torch_xla

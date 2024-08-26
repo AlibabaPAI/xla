@@ -378,6 +378,10 @@ XLATensorPtr embedding_dense_backward(const XLATensorPtr& grad_output,
 
 XLATensorPtr embedding(const XLATensorPtr& weight, const XLATensorPtr& indices);
 
+XLATensorPtr embedding_symint(const XLATensorPtr& weight,
+                              const XLATensorPtr& indices,
+                              at::SymIntArrayRef size, at::SymInt numel);
+
 XLATensorPtr eq(const XLATensorPtr& input, const at::Scalar& other);
 
 XLATensorPtr eq(const XLATensorPtr& input, const XLATensorPtr& other);
@@ -797,6 +801,8 @@ XLATensorPtr rsub(
     c10::optional<at::ScalarType> logical_element_type = c10::nullopt);
 
 void copy_(XLATensorPtr& input, XLATensorPtr& src);
+void copy_symint_(XLATensorPtr& input, c10::SymIntArrayRef input_size,
+                  XLATensorPtr& src);
 
 XLATensorPtr scatter(const XLATensorPtr& input, int64_t dim,
                      const XLATensorPtr& index, const XLATensorPtr& src);
@@ -824,6 +830,8 @@ XLATensorPtr sigmoid_backward(const XLATensorPtr& grad_output,
 
 XLATensorPtr slice(const XLATensorPtr& input, int64_t dim, int64_t start,
                    int64_t end, int64_t step);
+XLATensorPtr slice_symint(const XLATensorPtr& input, int64_t dim,
+                          c10::SymInt start, c10::SymInt end, c10::SymInt step);
 
 std::tuple<XLATensorPtr, XLATensorPtr> slogdet(const XLATensorPtr& input);
 
@@ -943,6 +951,9 @@ void uniform_(XLATensorPtr& input, double from, double to);
 
 // Insert a dimension of size one at the specified position.
 XLATensorPtr unsqueeze(const XLATensorPtr& input, int64_t dim);
+
+XLATensorPtr unsqueeze_symint(const XLATensorPtr& input,
+                              at::SymIntArrayRef input_sizes, int64_t dim);
 
 // In-place version of the method above.
 void unsqueeze_(XLATensorPtr& input, int64_t dim);
