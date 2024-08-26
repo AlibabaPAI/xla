@@ -745,6 +745,7 @@ c10::SymNode XLASymNodeImpl::gt(const c10::SymNode& other) {
   auto p_other = dynamic_cast<XLASymNodeImpl*>(other.get());
   XLA_CHECK(is_int()) << __FUNCTION__ << " with non-int NYI";
   XLA_CHECK(p_other->is_int()) << __FUNCTION__ << " with non-int NYI";
+  // use SizeLt to implement SizeGt
   auto n_lt = torch::lazy::MakeNode<SizeLt>(p_other->node(), node());
   return c10::make_intrusive<XLASymNodeImpl>(n_lt, PyType::BOOL);
 }
