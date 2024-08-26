@@ -65,7 +65,8 @@ class TestBoundedDynamicShapes(test_utils.XlaTestCase):
 
 
 if __name__ == '__main__':
-  assert os.environ['USE_BOUND_FOR_SHAPE_COMPARE'] == '1'
+  os.environ['USE_BOUND_FOR_SHAPE_COMPARE'] = os.getenv(
+      'USE_BOUND_FOR_SHAPE_COMPARE', '1')
   test = unittest.main()
   # DISABLE PYTHON DISPATCHER FLAG
   del pd
