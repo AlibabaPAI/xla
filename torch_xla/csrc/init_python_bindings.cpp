@@ -2334,6 +2334,8 @@ void InitXlaModuleBindings(py::module m) {
            const std::vector<uint32_t>& bounds) {
           TORCH_LAZY_COUNTER("XlaMarkBoundedDynamic", 1);
           XLATensorPtr xtensor = bridge::GetXlaTensor(input);
+          XLA_CHECK(dims.size() == bounds.size())
+              << "dims.size() should be equal to bounds.size()";
           xtensor->MarkBoundedDynamicDimension(dims, bounds);
         });
   m.def("_xla_mark_dynamic", [](const at::Tensor& input, uint32_t dim) {
