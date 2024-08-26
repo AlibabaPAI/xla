@@ -14,8 +14,8 @@ import torch
 from torch import nn
 from torch.fx import _pytree as fx_pytree
 import torch_xla
+from torch_xla._dynamo import dynamo_bridge
 from torch_xla.core import xla_model as xm
-from torch_xla.core import dynamo_bridge
 from torch_xla.debug import metrics
 import torch_xla.experimental.quantized
 import torch._dynamo as torchdynamo
