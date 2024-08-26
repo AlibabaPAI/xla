@@ -311,8 +311,26 @@ xla::XlaOp XlaHelpers::DynamicReshape(xla::XlaOp input,
   }
   auto info = GetDynamicReshapeInfo(input_shape, output_sizes);
   if (info) {
-    return xla::ReshapeWithInferredDimension(input, output_sizes,
-                                             info->dynamic_dimension);
+    int input_dyn_dim = -1;
+    for (int i = 0; i < input_shape.rank(); i++) {
+      if (input_shape.is_bounded_dynamic_dimension(i)) {
+        XLA_CHECK(input_dyn_dim == -1)
+            << "Reshaping with multiple bounded shapes is not supported.";
+        input_dyn_dim = i;
+      }
+    }
+
+    auto output_shape = info->output_shape;
+    std::vector<xla::XlaOp> dim_sizes;
+    for (int i = 0; i < output_shape.rank(); i++) {
+      if (output_shape.is_bounded_dynamic_dimension(i)) {
+        dim_sizes.push_back(xla::GetDimensionSize(input, input_dyn_dim));
+      } else {
+        dim_sizes.push_back(XlaHelpers::ScalarValue<int32_t>(
+            output_shape.dimensions(i), input.builder()));
+      }
+    }
+    return DynamicBoundedReshape(input, dim_sizes, output_shape);
   }
   return xla::Reshape(input, output_sizes);
 }
@@ -338,6 +356,20 @@ bool XlaHelpers::IsUnboundedDynamic(const xla::Shape& shape) {
   return std::any_of(dims.begin(), dims.end(), [](int64_t size) {
     return size == xla::Shape::kUnboundedSize;
   });
+}
+
+xla::XlaOp XlaHelpers::DynamicBoundedReshape(
+    xla::XlaOp input, const std::vector<xla::XlaOp>& size_ops,
+    const xla::Shape& shape) {
+  if (!XlaHelpers::IsDISCBackend()) {
+    return xla::DynamicReshape(
+        input, size_ops, shape.dimensions(),
+        runtime::util::ToVector<bool>(shape.dynamic_dimensions()));
+  }
+
+  auto shape_tensor = XlaHelpers::CreateShapeTensor(size_ops);
+  return xla::CustomCall(input.builder(), "mhlo.dynamic_reshape",
+                         {input, shape_tensor}, shape);
 }
 
 xla::XlaOp XlaHelpers::DynamicUnboundedReshape(
@@ -731,7 +763,10 @@ std::pair<xla::XlaOp, xla::XlaOp> XlaHelpers::PromoteShapes(xla::XlaOp op1,
   const xla::Shape& shape2 = ShapeHelper::ShapeOfXlaOp(op2);
 
   xla::Shape shape = GetPromotedShape(shape1, shape2);
-  if (shape1.is_unbounded_dynamic() || shape2.is_unbounded_dynamic()) {
+  if (XlaHelpers::IsDISCBackend() &&
+      (shape1.is_dynamic() || shape2.is_dynamic())) {
+    return ImplicitBroadcastWithBoundedDynamicShapes(op1, op2, shape);
+  } else if (shape1.is_unbounded_dynamic() || shape2.is_unbounded_dynamic()) {
     return ImplicitBroadcastWithUnboundedDynamicShapes(op1, op2, shape);
   }
 
@@ -812,6 +847,25 @@ std::vector<xla::XlaOp> ExtractDimensionSizesWithPadding(const xla::XlaOp op,
   return op_dims;
 }
 
+xla::XlaOp CreateShapeTensorWithPadding(xla::XlaOp operand, int pad_count) {
+  const xla::Shape& shape = ShapeHelper::ShapeOfXlaOp(operand);
+  std::vector<xla::XlaOp> op_dims;
+  for (size_t i = 0; i < pad_count; i++) {
+    op_dims.push_back(XlaHelpers::ScalarValue<int32_t>(1, operand.builder()));
+  }
+
+  for (int dim = 0; dim < shape.rank(); dim++) {
+    if (shape.is_dynamic_dimension(dim)) {
+      op_dims.push_back(xla::GetDimensionSize(operand, dim));
+    } else {
+      op_dims.push_back(XlaHelpers::ScalarValue<int32_t>(shape.dimensions(dim),
+                                                         operand.builder()));
+    }
+  }
+
+  return XlaHelpers::CreateShapeTensor(op_dims);
+}
+
 // Stringify the broadcast dimensions to provide for the 'backend_config'
 // attribute of the generated custom_call.
 std::string StringifyBroadcastDimensions(std::vector<int64_t> broadcast_dims) {
@@ -842,6 +896,77 @@ xla::XlaOp DynamicBroadcastInDim(xla::XlaOp op, const xla::Shape& final_shape,
 }
 
 }  // namespace
+
+xla::XlaOp XlaHelpers::CreateOutputDimsTensor(xla::XlaOp operand) {
+  const xla::Shape& shape = ShapeHelper::ShapeOfXlaOp(operand);
+  std::vector<xla::XlaOp> get_dim_ops;
+  for (int dim = 0; dim < shape.rank(); dim++) {
+    if (shape.is_dynamic_dimension(dim)) {
+      get_dim_ops.push_back(xla::GetDimensionSize(operand, dim));
+    } else {
+      get_dim_ops.push_back(XlaHelpers::ScalarValue<int32_t>(
+          shape.dimensions(dim), operand.builder()));
+    }
+  }
+  return XlaHelpers::CreateShapeTensor(get_dim_ops);
+}
+
+xla::XlaOp XlaHelpers::CreateShapeTensor(
+    const std::vector<xla::XlaOp>& size_ops) {
+  XLA_CHECK(!size_ops.empty()) << "size_ops should not be empty";
+  auto front = size_ops.front();
+  xla::Shape shape = xla::ShapeUtil::MakeShape(XlaHelpers::TypeOfXlaOp(front),
+                                               {size_ops.size()});
+  return xla::CustomCall(front.builder(), "tensor.from_elements",
+                         /*operands=*/size_ops,
+                         /*shape*/ shape);
+}
+
+xla::XlaOp XlaHelpers::DynamicBoundedBroadcast(
+    xla::XlaOp input, xla::XlaOp aux_input,
+    const std::vector<int64_t>& aux_input_dimensions) {
+  const xla::Shape& input_shape = ShapeHelper::ShapeOfXlaOp(input);
+  const xla::Shape& aux_input_shape = ShapeHelper::ShapeOfXlaOp(aux_input);
+  std::vector<int64_t> output_dimensions;
+  std::vector<bool> output_dynamic;
+  // Collect the dimension sizes and dynamic dimensions corresponding to the
+  // final broadcasted shape.
+  for (auto dim : aux_input_dimensions) {
+    output_dimensions.push_back(aux_input_shape.dimensions(dim));
+    output_dynamic.push_back(aux_input_shape.is_dynamic_dimension(dim));
+  }
+
+  for (int dim = 0; dim < input_shape.rank(); dim++) {
+    output_dimensions.push_back(input_shape.dimensions(dim));
+    output_dynamic.push_back(input_shape.is_dynamic_dimension(dim));
+  }
+
+  std::vector<xla::XlaOp> get_dim_ops;
+  for (auto dim : aux_input_dimensions) {
+    if (aux_input_shape.is_dynamic_dimension(dim)) {
+      get_dim_ops.push_back(xla::GetDimensionSize(aux_input, dim));
+    } else {
+      get_dim_ops.push_back(XlaHelpers::ScalarValue<int32_t>(
+          aux_input_shape.dimensions(dim), aux_input.builder()));
+    }
+  }
+
+  for (int dim = 0; dim < input_shape.rank(); dim++) {
+    if (input_shape.is_dynamic_dimension(dim)) {
+      get_dim_ops.push_back(xla::GetDimensionSize(input, dim));
+    } else {
+      get_dim_ops.push_back(XlaHelpers::ScalarValue<int32_t>(
+          input_shape.dimensions(dim), input.builder()));
+    }
+  }
+
+  // Create shape tensor
+  auto shape_tensor = XlaHelpers::CreateShapeTensor(get_dim_ops);
+
+  xla::Shape final_shape = xla::ShapeUtil::MakeShape(
+      input_shape.element_type(), output_dimensions, output_dynamic);
+  return DynamicBroadcastInDim(input, final_shape, shape_tensor);
+}
 
 xla::XlaOp XlaHelpers::DynamicUnboundedBroadcast(
     xla::XlaOp input, xla::XlaOp aux_input,
@@ -899,6 +1024,51 @@ xla::XlaOp XlaHelpers::DynamicUnboundedBroadcast(
   xla::Shape final_shape = xla::ShapeUtil::MakeShape(
       input_shape.element_type(), output_dimensions, output_dynamic);
   return DynamicBroadcastInDim(input, final_shape, concat_op);
+}
+
+std::pair<xla::XlaOp, xla::XlaOp>
+XlaHelpers::ImplicitBroadcastWithBoundedDynamicShapes(xla::XlaOp op1,
+                                                      xla::XlaOp op2,
+                                                      const xla::Shape& shape) {
+  const xla::Shape& shape1 = ShapeHelper::ShapeOfXlaOp(op1);
+  const xla::Shape& shape2 = ShapeHelper::ShapeOfXlaOp(op2);
+
+  XLA_CHECK(shape.dimensions().size() ==
+            std::max(shape1.dimensions().size(), shape2.dimensions().size()));
+
+  // Collect the dimension sizes of the 'op1' and 'op2' in 'op1_dims' and
+  // 'op2_dims' resp. with potential padding.
+  //   Example:
+  //     shape1 = [9, ?, 6, ?, ?]
+  //     shape2 =       [6, 1, 2]
+  //      shape = [9, ?, 6, ?, 2] where ?: represents bounded dynamic size.
+  //
+  //   rank(shape1) = rank(shape): No padding needed and
+  //   the pre-broadcast result, 'op1_dims', just collects the dimension sizes
+  //   of shape1.
+  //     op1_dims = [9, ?, 6, ?, ?]
+  //   rank(shape2) < rank(shape): Make the rank of shape2 match
+  //   that of shape by padding it with 1's. The pre-broadcast result is
+  //   'op2_dims'.
+  //     op2_dims = [1, 1, 6, 1, 2]
+  xla::XlaOp op1_dims = CreateShapeTensorWithPadding(
+      op1, shape.dimensions().size() - shape1.dimensions().size());
+  xla::XlaOp op2_dims = CreateShapeTensorWithPadding(
+      op2, shape.dimensions().size() - shape2.dimensions().size());
+
+  if (shape1 == shape) {
+    return std::pair<xla::XlaOp, xla::XlaOp>(
+        op1, DynamicBroadcastInDim(op2, shape, op1_dims));
+  } else if (shape2 == shape) {
+    return std::pair<xla::XlaOp, xla::XlaOp>(
+        DynamicBroadcastInDim(op1, shape, op2_dims), op2);
+  }
+  // The broadcasted shape is the max of the individual pre-broadcasted
+  // shapes. final_broadcast_dimensions = max(op1_dims, op2_dims).
+  auto final_broadcast_dimensions = xla::Max(op1_dims, op2_dims);
+  return std::pair<xla::XlaOp, xla::XlaOp>(
+      DynamicBroadcastInDim(op1, shape, final_broadcast_dimensions),
+      DynamicBroadcastInDim(op2, shape, final_broadcast_dimensions));
 }
 
 std::pair<xla::XlaOp, xla::XlaOp>

@@ -5,6 +5,7 @@
 
 #include "absl/strings/str_join.h"
 #include "torch_xla/csrc/data_ops.h"
+#include "torch_xla/csrc/helpers.h"
 #include "torch_xla/csrc/lowering_context.h"
 #include "torch_xla/csrc/ops/infer_output_shape.h"
 #include "torch_xla/csrc/runtime/debug_macros.h"
@@ -57,6 +58,14 @@ XlaOpVector ExpandSymInt::Lower(LoweringContext* loctx) const {
   std::vector<xla::XlaOp> size_ops;
   for (int i = 1; i < operands().size(); i++) {
     size_ops.push_back(loctx->GetOutputOp(operand(i)));
+  }
+  if (size_ops.empty()) {
+    return ReturnOp(BuildExpand(input, upper_bounds_), loctx);
+  }
+  if (XlaHelpers::IsDISCBackend()) {
+    xla::XlaOp output =
+        BuildExpandSymInt(input, upper_bounds_, size_ops, dynamic_dims_);
+    return ReturnOp(output, loctx);
   }
   xla::XlaOp output = SetDimensionSizes(BuildExpand(input, upper_bounds_),
                                         size_ops, dynamic_dims_);

@@ -97,6 +97,27 @@ xla::XlaOp BuildView(xla::XlaOp input, absl::Span<const int64_t> output_sizes) {
   return XlaHelpers::DynamicReshape(input, complete_output_sizes);
 }
 
+xla::XlaOp BuildViewSymInt(xla::XlaOp input,
+                           absl::Span<const xla::XlaOp> size_ops,
+                           const std::vector<int64_t>& upper_bounds,
+                           const std::vector<bool>& dynamic_dims) {
+  xla::Shape output_shape =
+      xla::ShapeUtil::MakeShape(ShapeHelper::ShapeOfXlaOp(input).element_type(),
+                                {upper_bounds}, {dynamic_dims});
+  std::vector<xla::XlaOp> complete_size_ops;
+  size_t curr_size_ops_index = 0;
+  for (size_t i = 0; i < dynamic_dims.size(); i++) {
+    if (dynamic_dims[i]) {
+      complete_size_ops.push_back(size_ops[curr_size_ops_index++]);
+    } else {
+      complete_size_ops.push_back(
+          XlaHelpers::ScalarValue<int32_t>(upper_bounds[i], input.builder()));
+    }
+  }
+  return XlaHelpers::DynamicBoundedReshape(input, complete_size_ops,
+                                           output_shape);
+}
+
 xla::XlaOp SetDimensionSizes(xla::XlaOp input,
                              absl::Span<const xla::XlaOp> symbolic_output_sizes,
                              std::vector<bool> dynamic_dims) {
@@ -138,11 +159,75 @@ xla::XlaOp BuildExpand(xla::XlaOp input,
   auto input_sizes = XlaHelpers::SizesOfXlaOp(input);
   // Adjust the rank of the input to match the rank of the output.
   XLA_CHECK_LE(input_sizes.size(), output_sizes.size());
-  input_sizes.insert(input_sizes.begin(),
-                     output_sizes.size() - input_sizes.size(), 1);
-  xla::XlaOp implicit_reshape = XlaHelpers::DynamicReshape(input, input_sizes);
+  xla::XlaOp implicit_reshape = input;
+
+  if (input_sizes.size() < output_sizes.size()) {
+    input_sizes.insert(input_sizes.begin(),
+                       output_sizes.size() - input_sizes.size(), 1);
+    implicit_reshape = XlaHelpers::DynamicReshape(input, input_sizes);
+  }
+  if (output_sizes.size() == 0) {
+    return implicit_reshape;
+  }
+
+  const xla::Shape& input_shape = ShapeHelper::ShapeOfXlaOp(implicit_reshape);
+  if (XlaHelpers::IsDISCBackend() && input_shape.is_dynamic()) {
+    std::vector<xla::XlaOp> get_dim_ops;
+    for (size_t dim = 0; dim < input_shape.rank(); dim++) {
+      if (input_shape.is_dynamic_dimension(dim)) {
+        get_dim_ops.push_back(xla::GetDimensionSize(implicit_reshape, dim));
+      } else {
+        get_dim_ops.push_back(XlaHelpers::ScalarValue<int32_t>(
+            output_sizes[dim], implicit_reshape.builder()));
+      }
+    }
+    xla::XlaOp sym_op = XlaHelpers::CreateShapeTensor(get_dim_ops);
+    xla::Shape final_shape = xla::ShapeUtil::MakeShape(
+        XlaHelpers::TypeOfXlaOp(implicit_reshape), output_sizes,
+        runtime::util::ToVector<bool>(input_shape.dynamic_dimensions()));
+    return xla::DynamicBroadcastInDim(
+        implicit_reshape, sym_op,
+        torch::lazy::Iota<int64_t>(output_sizes.size()), final_shape);
+  }
+
   return xla::BroadcastInDim(implicit_reshape, output_sizes,
                              torch::lazy::Iota<int64_t>(output_sizes.size()));
+}
+
+xla::XlaOp BuildExpandSymInt(xla::XlaOp input,
+                             absl::Span<const int64_t> output_sizes,
+                             const std::vector<xla::XlaOp>& size_ops,
+                             const std::vector<bool>& dynamic_dims) {
+  auto input_sizes = XlaHelpers::SizesOfXlaOp(input);
+  // Adjust the rank of the input to match the rank of the output.
+  XLA_CHECK_LE(input_sizes.size(), output_sizes.size());
+  xla::XlaOp implicit_reshape = input;
+
+  if (input_sizes.size() < output_sizes.size()) {
+    input_sizes.insert(input_sizes.begin(),
+                       output_sizes.size() - input_sizes.size(), 1);
+    implicit_reshape = XlaHelpers::DynamicReshape(input, input_sizes);
+  }
+  if (output_sizes.size() == 0) {
+    return implicit_reshape;
+  }
+
+  size_t current_size_index = 0;
+  std::vector<xla::XlaOp> get_dim_ops;
+  for (size_t i = 0; i < dynamic_dims.size(); i++) {
+    if (dynamic_dims[i]) {
+      get_dim_ops.push_back(size_ops[current_size_index++]);
+    } else {
+      get_dim_ops.push_back(
+          XlaHelpers::ScalarValue<int32_t>(output_sizes[i], input.builder()));
+    }
+  }
+  xla::XlaOp sym_op = XlaHelpers::CreateShapeTensor(get_dim_ops);
+  xla::Shape final_shape = xla::ShapeUtil::MakeShape(
+      XlaHelpers::TypeOfXlaOp(input), output_sizes, dynamic_dims);
+  return xla::DynamicBroadcastInDim(
+      implicit_reshape, sym_op, torch::lazy::Iota<int64_t>(output_sizes.size()),
+      final_shape);
 }
 
 xla::XlaOp BuildMaskedFillScalar(xla::XlaOp input, xla::XlaOp mask,
@@ -152,8 +237,30 @@ xla::XlaOp BuildMaskedFillScalar(xla::XlaOp input, xla::XlaOp mask,
 
   if (!xla::ShapeUtil::Compatible(input_shape, mask_shape)) {
     xla::Shape shape = XlaHelpers::GetPromotedShape(input_shape, mask_shape);
-    input = BuildExpand(input, shape.dimensions());
-    mask = BuildExpand(mask, shape.dimensions());
+    if (shape.is_dynamic()) {
+      std::vector<xla::XlaOp> size_ops;
+      int min_rank = std::min(input_shape.rank(), mask_shape.rank());
+      for (int i = 0; i < shape.rank(); i++) {
+        if (shape.is_dynamic_dimension(i)) {
+          int input_dim = input_shape.rank() - min_rank + i;
+          int mask_dim = mask_shape.rank() - min_rank + i;
+          if (input_shape.is_dynamic_dimension(input_dim)) {
+            size_ops.push_back(xla::GetDimensionSize(input, input_dim));
+          } else {
+            size_ops.push_back(xla::GetDimensionSize(mask, mask_dim));
+          }
+        }
+      }
+      input = BuildExpandSymInt(
+          input, shape.dimensions(), size_ops,
+          runtime::util::ToVector<bool>(shape.dynamic_dimensions()));
+      mask = BuildExpandSymInt(
+          mask, shape.dimensions(), size_ops,
+          runtime::util::ToVector<bool>(shape.dynamic_dimensions()));
+    } else {
+      input = BuildExpand(input, shape.dimensions());
+      mask = BuildExpand(mask, shape.dimensions());
+    }
   }
 
   xla::XlaOp zero = xla::Zero(mask.builder(), XlaHelpers::TypeOfXlaOp(mask));
@@ -370,8 +477,13 @@ xla::XlaOp BuildUnselect(xla::XlaOp target, xla::XlaOp source, int64_t dim,
 
   xla::PrimitiveType pred_type =
       GetXlaPrimitiveTypeForCurrentDevice(xla::PrimitiveType::PRED);
-  xla::XlaOp source_true = XlaHelpers::ScalarBroadcast(
-      1, pred_type, source_shape.dimensions(), source.builder());
+  xla::XlaOp source_true;
+  if (source_shape.is_dynamic()) {
+    source_true = XlaHelpers::DynamicScalarBroadcast(1, pred_type, source);
+  } else {
+    source_true = XlaHelpers::ScalarBroadcast(
+        1, pred_type, source_shape.dimensions(), source.builder());
+  }
   xla::XlaOp pred_zero = xla::Zero(target.builder(), pred_type);
   xla::XlaOp zero = xla::Zero(target.builder(), target_shape.element_type());
   xla::PaddingConfig padding_config;
@@ -552,6 +664,46 @@ xla::XlaOp PadInDim(xla::XlaOp input, int64_t dim, int64_t pad_lo,
     }
   }
   return xla::Pad(input, *pad_value, padding_config);
+}
+
+xla::XlaOp BuildSelectSymInt(xla::XlaOp input, int dim, xla::XlaOp start,
+                             xla::XlaOp end, xla::XlaOp stride,
+                             const xla::Shape& output_shape) {
+  const xla::Shape& input_shape = ShapeHelper::ShapeOfXlaOp(input);
+
+  std::vector<xla::XlaOp> start_ops, limit_ops, stride_ops;
+
+  xla::XlaOp salar_zero = XlaHelpers::ScalarValue<int32_t>(0, input.builder());
+  xla::XlaOp salar_one = XlaHelpers::ScalarValue<int32_t>(1, input.builder());
+
+  for (int i = 0; i < input_shape.rank(); ++i) {
+    if (i == dim) {
+      start_ops.push_back(start);
+      limit_ops.push_back(end);
+      stride_ops.push_back(stride);
+    } else {
+      start_ops.push_back(salar_zero);
+      if (input_shape.is_dynamic_dimension(i)) {
+        limit_ops.push_back(xla::GetDimensionSize(input, i));
+      } else {
+        limit_ops.push_back(XlaHelpers::ScalarValue<int32_t>(
+            input_shape.dimensions(i), input.builder()));
+      }
+      stride_ops.push_back(salar_one);
+    }
+  }
+
+  xla::Shape tensor_shape = xla::ShapeUtil::MakeShape(
+      XlaHelpers::TypeOfXlaOp(salar_zero), {input_shape.rank()}, {false});
+
+  xla::XlaOp start_tensor = XlaHelpers::CreateShapeTensor(start_ops);
+  xla::XlaOp limit_tensor = XlaHelpers::CreateShapeTensor(limit_ops);
+  xla::XlaOp stride_tensor = XlaHelpers::CreateShapeTensor(stride_ops);
+  xla::XlaOp output = xla::CustomCall(
+      input.builder(), "mhlo.real_dynamic_slice",
+      /*operands=*/{input, start_tensor, limit_tensor, stride_tensor},
+      /*shape*/ output_shape);
+  return output;
 }
 
 }  // namespace torch_xla
