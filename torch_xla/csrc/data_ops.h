@@ -25,6 +25,10 @@ std::vector<int64_t> GetCompleteShape(absl::Span<const int64_t> output_sizes,
 // Creates a new tensor with the same data as the input tensor and the specified
 // output size.
 xla::XlaOp BuildView(xla::XlaOp input, absl::Span<const int64_t> output_sizes);
+xla::XlaOp BuildViewSymInt(xla::XlaOp input,
+                           absl::Span<const xla::XlaOp> size_ops,
+                           const std::vector<int64_t>& upper_bounds,
+                           const std::vector<bool>& dynamic_dims);
 
 // Return a new XlaOp that reflects dynamic dimensions
 xla::XlaOp SetDimensionSizes(xla::XlaOp input,
@@ -42,6 +46,10 @@ xla::XlaOp SqueezeAllTrivialDimensions(xla::XlaOp input);
 // output sizes.
 xla::XlaOp BuildExpand(xla::XlaOp input,
                        absl::Span<const int64_t> output_sizes);
+xla::XlaOp BuildExpandSymInt(xla::XlaOp input,
+                             absl::Span<const int64_t> output_sizes,
+                             const std::vector<xla::XlaOp>& size_ops,
+                             const std::vector<bool>& dynamic_dims);
 
 xla::XlaOp BuildMaskedFillScalar(xla::XlaOp input, xla::XlaOp mask,
                                  xla::XlaOp scalar);
@@ -110,6 +118,10 @@ xla::XlaOp BuildReplicationPadBackward(xla::XlaOp grad_output, xla::XlaOp input,
 
 xla::XlaOp PadInDim(xla::XlaOp input, int64_t dim, int64_t pad_lo,
                     int64_t pad_hi, const xla::XlaOp* pad_value = nullptr);
+
+xla::XlaOp BuildSelectSymInt(xla::XlaOp input, int dim, xla::XlaOp start,
+                             xla::XlaOp end, xla::XlaOp stride,
+                             const xla::Shape& output_shape);
 
 }  // namespace torch_xla
 

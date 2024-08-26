@@ -16,6 +16,7 @@
 #include "torch_xla/csrc/ops/arithmetic_ir_ops.h"
 #include "torch_xla/csrc/ops/constant.h"
 #include "torch_xla/csrc/ops/expand.h"
+#include "torch_xla/csrc/ops/expand_symint.h"
 #include "torch_xla/csrc/ops/infer_output_shape.h"
 #include "torch_xla/csrc/ops/log_softmax_backward.h"
 #include "torch_xla/csrc/ops/permute.h"
@@ -222,7 +223,16 @@ torch::lazy::NodePtr Sigmoid(const torch::lazy::Value& input) {
 
 torch::lazy::NodePtr SigmoidBackward(const torch::lazy::Value& grad_output,
                                      const torch::lazy::Value& output) {
-  torch::lazy::Value scalar_1 = ScalarOp(1, GetXlaShape(output));
+  torch::lazy::Value scalar_1;
+  auto output_shape = GetXlaShape(output);
+  if (output_shape.is_dynamic()) {
+    SymIntElements size_elements(output);
+    scalar_1 = ScalarOp(1, output_shape.element_type());
+    scalar_1 = torch::lazy::MakeNode<ExpandSymInt>(scalar_1, size_elements);
+  } else {
+    scalar_1 = ScalarOp(1, GetXlaShape(output));
+  }
+
   auto lower_fn = [](const XlaNode& node,
                      LoweringContext* loctx) -> XlaOpVector {
     xla::XlaOp grad_output = loctx->GetOutputOp(node.operand(0));
@@ -1080,6 +1090,24 @@ torch::lazy::NodePtr Mul(const torch::lazy::Value& input,
                                 lower_for_shape_fn);
       },
       std::move(lower_fn));
+}
+
+torch::lazy::NodePtr DynamicArange(const torch::lazy::Value& size,
+                                   const torch::lazy::Value& start,
+                                   const torch::lazy::Value& step,
+                                   xla::PrimitiveType scalar_type,
+                                   const xla::Shape& shape) {
+  auto lower_fn = [scalar_type, shape](const XlaNode& node,
+                                       LoweringContext* loctx) -> XlaOpVector {
+    xla::XlaOp xla_size = loctx->GetOutputOp(node.operand(0));
+    xla::XlaOp xla_start = loctx->GetOutputOp(node.operand(1));
+    xla::XlaOp xla_end = loctx->GetOutputOp(node.operand(2));
+    return node.ReturnOp(
+        BuildDynamicArange(xla_size, xla_start, xla_end, scalar_type, shape),
+        loctx);
+  };
+  return GenericOp(torch::lazy::OpKind(at::aten::arange), {size, start, step},
+                   shape, std::move(lower_fn));
 }
 
 }  // namespace torch_xla
