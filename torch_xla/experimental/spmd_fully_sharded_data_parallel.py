@@ -97,11 +97,10 @@ class SpmdFullyShardedDataParallel(nn.Module):
       self._auto_wrap(auto_wrap_kwargs, fsdp_kwargs)
 
     _materialize_module(
-      module,
-      None,
-      [],
-      deferred_init_check_fn=lambda k: not isinstance(
-          k, SpmdFullyShardedDataParallel))
+        module,
+        None, [],
+        deferred_init_check_fn=lambda k: not isinstance(
+            k, SpmdFullyShardedDataParallel))
 
     # Let's move the module to xla device in case it's not moved
     # by the caller already.
