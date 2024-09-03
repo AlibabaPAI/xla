@@ -11,6 +11,7 @@ import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.distributed.spmd as spmd
 from torch_xla.distributed.fsdp.wrap import recursive_wrap
+from torch_xla.distributed.fsdp._init_utils import _materialize_module
 
 
 def _prepare_spmd_partition_spec(param):
@@ -94,6 +95,12 @@ class SpmdFullyShardedDataParallel(nn.Module):
           # `auto_wrapper_callable`` doesn't need to be specified in auto-wrapping
       )
       self._auto_wrap(auto_wrap_kwargs, fsdp_kwargs)
+
+    _materialize_module(
+        module,
+        None, [],
+        deferred_init_check_fn=lambda k: not isinstance(
+            k, SpmdFullyShardedDataParallel))
 
     # Let's move the module to xla device in case it's not moved
     # by the caller already.
