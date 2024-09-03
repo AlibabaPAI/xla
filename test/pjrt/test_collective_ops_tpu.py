@@ -130,5 +130,113 @@ class TestCollectiveOpsTpu(parameterized.TestCase):
                                              list(range(world_size))]])
 
 
+# Test for collective ops from torch.distributed
+class TestDistCollectiveOpsTpu(parameterized.TestCase):
+
+  @staticmethod
+  def _all_reduce(use_dynamo: bool):
+    met.clear_all()
+
+    def callable(input):
+      dist.all_reduce(input, dist.ReduceOp.SUM)
+      return input
+
+    dist.init_process_group("xla", init_method='xla://')
+    device = xm.xla_device()
+    input = torch.tensor([xr.global_ordinal()],
+                         dtype=torch.float,
+                         device=device)
+
+    f = torch.compile(callable, backend='openxla') if use_dynamo else callable
+    f(input)
+    torch_xla.sync()
+    if not use_dynamo:
+      assert 'xla::AllReduceInPlace' in met.counter_names(
+      ) or 'xla::AllReduce' in met.counter_names()
+    else:
+      assert 'xla::all_reduce' in met.counter_names()
+    return input.cpu()
+
+  @staticmethod
+  def _all_gather_into_tensor(use_dynamo: bool):
+    met.clear_all()
+
+    def callable(output, input):
+      dist.all_gather_into_tensor(output_tensor, input, None)
+      return output_tensor
+
+    dist.init_process_group("xla", init_method='xla://')
+    device = xm.xla_device()
+    input = torch.tensor([xr.global_ordinal()],
+                         dtype=torch.float,
+                         device=device)
+    output_tensor = torch.empty((1, xr.world_size()), device=device)
+    f = torch.compile(callable, backend='openxla') if use_dynamo else callable
+    f(output_tensor, input)
+    torch_xla.sync()
+    if not use_dynamo:
+      assert 'xla::AllGather' in met.counter_names(
+      ) or 'xla::AllGatherOut' in met.counter_names()
+    else:
+      assert 'xla::all_gather_into_tensor' in met.counter_names()
+    return output_tensor.cpu()
+
+  @staticmethod
+  def _all_gather(use_dynamo: bool):
+    met.clear_all()
+    dist.init_process_group("xla", init_method='xla://')
+    device = xm.xla_device()
+
+    def callable(input):
+      output_tensor = [
+          torch.tensor([0], dtype=torch.float).to(device)
+          for _ in range(xr.world_size())
+      ]
+      dist.all_gather(output_tensor, input, None)
+      return output_tensor
+
+    input = torch.tensor([xr.global_ordinal()],
+                         dtype=torch.float,
+                         device=device)
+
+    f = torch.compile(callable, backend='openxla') if use_dynamo else callable
+    output = f(input)
+    torch_xla.sync()
+    if not use_dynamo:
+      assert 'xla::AllGather' in met.counter_names(
+      ) or 'xla::AllGatherOut' in met.counter_names()
+    else:
+      assert 'xla::all_gather_into_tensor' in met.counter_names()
+    # output is list of tensors
+    return pytree.tree_map(lambda x: x.cpu(), output)
+
+  @parameterized.named_parameters(('dynamo', True), ('nondynamo', False))
+  def test_all_reduce(self, use_dynamo):
+    results = pjrt.run_multiprocess(self._all_reduce, use_dynamo=use_dynamo)
+    expected = torch.tensor([sum(range(tpu.num_expected_global_devices()))],
+                            dtype=torch.float)
+    for index, val in results.items():
+      torch.testing.assert_close(val, expected)
+
+  @parameterized.named_parameters(('dynamo', True), ('nondynamo', False))
+  def test_all_gather_into_tensor(self, use_dynamo):
+    results = pjrt.run_multiprocess(
+        self._all_gather_into_tensor, use_dynamo=use_dynamo)
+    expected = torch.arange(
+        tpu.num_expected_global_devices(), dtype=torch.float).unsqueeze(0)
+    for index, val in results.items():
+      torch.testing.assert_close(val, expected)
+
+  @parameterized.named_parameters(('dynamo', True), ('nondynamo', False))
+  def test_all_gather(self, use_dynamo):
+    results = pjrt.run_multiprocess(self._all_gather, use_dynamo=use_dynamo)
+    expected = [
+        torch.tensor([i], dtype=torch.float)
+        for i in range(tpu.num_expected_global_devices())
+    ]
+    for index, val in results.items():
+      torch.testing.assert_close(val, expected)
+
+
 if __name__ == '__main__':
   absltest.main()
