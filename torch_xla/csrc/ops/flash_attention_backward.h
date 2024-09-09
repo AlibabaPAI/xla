@@ -40,4 +40,4 @@ class FlashAttentionBackward : public XlaNode {
 
 }  // namespace torch_xla
 
-#endif  // XLA_TORCH_XLA_CSRC_OPS_FLASH_ATTENTION_BACKWARD_H_
+#endif  // XLA_TORCH_XLA_CSRC_OPS_FLASH_ATTENTION_VARLEN_BACKWARD_H_

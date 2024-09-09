@@ -60,10 +60,11 @@ void custom_call_flash_attention_varlen_forward(cudaStream_t stream, void** buff
   cudaEventRecord(torch_wait_xla_event, stream);
   cudaStreamWaitEvent(torch_stream, torch_wait_xla_event);
 
+  auto cuda_stream = at::cuda::getDefaultCUDAStream();
+  at::cuda::CUDAStreamGuard guard(cuda_stream);
+
   auto opts = torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA);
-  at::Tensor attention_mask = torch::from_blob(
-      buffers[3],
-      {params.b, params.seqlen_k}, opts);
+
   at::Tensor cu_seqlens_q = torch::from_blob(
       buffers[7 + buf_offset],
       {params.b + 1}, opts);
@@ -79,8 +80,14 @@ void custom_call_flash_attention_varlen_forward(cudaStream_t stream, void** buff
   at::Tensor v = torch::from_blob(
       buffers[2],
       {params.b * params.seqlen_k, params.h_k, params.d}, opts.dtype(scalar_type));
+  at::Tensor attention_mask = torch::from_blob(
+      buffers[3],
+      {params.b, params.seqlen_k}, opts);
+
   int max_seqlen_in_batch_k = params.seqlen_k;
   int total_k = params.b * params.seqlen_k;
+
+  cudaMemsetAsync(buffers[8 + buf_offset], 0, (params.b + 1) * sizeof(int32_t), cuda_stream);
   at::Tensor indices_k = mask_to_indices(attention_mask, max_seqlen_in_batch_k, total_k, cu_seqlens_k);
   auto unpad_k = index_first_axis(k, indices_k);
   auto unpad_v = index_first_axis(v, indices_k);
@@ -100,7 +107,7 @@ void custom_call_flash_attention_varlen_forward(cudaStream_t stream, void** buff
     at::Tensor attention_mask_slice = attention_mask.slice(/*dim=*/1, /*start=*/-params.seqlen_q, /*end=*/torch::indexing::None);
     indices_q = mask_to_indices(attention_mask_slice, max_seqlen_in_batch_q, total_q, cu_seqlens_q);
   }
-  
+
   at::Tensor unpad_q = index_first_axis(q, indices_q);
 
   at::Tensor unpad_output = torch::zeros(
@@ -146,8 +153,9 @@ void custom_call_flash_attention_varlen_forward(cudaStream_t stream, void** buff
   launch_params.o_row_stride = params.o_row_stride;
   launch_params.o_head_stride = params.o_head_stride;
 
-  launch_params.cu_seqlens_q = static_cast<int*>(cu_seqlens_q.data_ptr());
-  launch_params.cu_seqlens_k = static_cast<int*>(cu_seqlens_k.data_ptr());
+  launch_params.cu_seqlens_q = static_cast<int*>(buffers[7 + buf_offset]);
+  launch_params.cu_seqlens_k = static_cast<int*>(buffers[8 + buf_offset]);
+
   launch_params.seqused_k = static_cast<int*>(nullptr);
 
   // P = softmax(QK^T)
@@ -207,7 +215,8 @@ void custom_call_flash_attention_varlen_forward(cudaStream_t stream, void** buff
       {2}, options.dtype(torch::kInt64));
   // Forward kernel will populate memory with the seed and offset.
   launch_params.rng_state = reinterpret_cast<uint64_t*>(rng_state.data_ptr());
-  rng_state.fill_(0);
+  // rng_state.fill_(0);
+  cudaMemsetAsync(rng_state.data_ptr(), 0, 2 * sizeof(int64_t), cuda_stream);
 
   if ((1.f - launch_params.p_dropout) > 0.0) {
     // number of times random will be generated per thread, to offset philox

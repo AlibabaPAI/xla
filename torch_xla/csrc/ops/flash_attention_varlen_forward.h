@@ -34,4 +34,4 @@ class FlashAttentionVarlenForward : public XlaNode {
 
 }  // namespace torch_xla
 
-#endif  // XLA_TORCH_XLA_CSRC_OPS_FLASH_ATTENTION_FORWARD_H_
+#endif  // XLA_TORCH_XLA_CSRC_OPS_FLASH_ATTENTION_VARLEN_FORWARD_H_

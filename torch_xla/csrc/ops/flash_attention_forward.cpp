@@ -111,6 +111,9 @@ void custom_call_flash_attention_forward(cudaStream_t stream, void** buffers,
   cudaEventRecord(torch_wait_xla_event, stream);
   cudaStreamWaitEvent(torch_stream, torch_wait_xla_event);
 
+  auto cuda_stream = at::cuda::getDefaultCUDAStream();
+  at::cuda::CUDAStreamGuard guard(cuda_stream);
+
   auto scalar_type = params.is_bf16 ? torch::kBFloat16 : torch::kFloat16;
   auto opts = torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA);
   at::Tensor q = torch::from_blob(
@@ -228,8 +231,7 @@ void custom_call_flash_attention_forward(cudaStream_t stream, void** buffers,
   // Forward kernel will populate memory with the seed and offset.
   launch_params.rng_state = reinterpret_cast<uint64_t*>(rng_state.data_ptr());
 //   buffers[5 + buf_offset] = launch_params.rng_state;
-//   cudaMemsetAsync(launch_params.rng_state, 0, 2 * sizeof(uint64_t));
-  rng_state.fill_(0);
+  cudaMemsetAsync(rng_state.data_ptr(), 0, 2 * sizeof(int64_t), cuda_stream);
 
   if ((1.f - launch_params.p_dropout) > 0.0) {
     // number of times random will be generated per thread, to offset philox
