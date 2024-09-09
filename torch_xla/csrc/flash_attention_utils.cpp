@@ -446,7 +446,6 @@ at::Tensor mask_to_indices(const at::Tensor& attention_mask,
   total = indices.size(0);
   max_seqlen_in_batch = seqlens_in_batch.max().item<int>();
   at::Tensor cumsum = torch::cumsum(seqlens_in_batch, 0);
-  // cu_seqlen.fill_(0);
   cu_seqlen.slice(0, 1, seqlens_in_batch.size(0) + 1).copy_(cumsum);
   return indices;
 }

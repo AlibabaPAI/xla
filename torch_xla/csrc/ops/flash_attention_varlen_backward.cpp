@@ -156,7 +156,12 @@ void custom_call_flash_attention_varlen_backward(cudaStream_t stream, void** buf
   int total_q = params.b * params.seqlen_q;
   int total_k = params.b * params.seqlen_k;
   at::Tensor indices_q = cu_seqlens_to_indices(cu_seqlens_q, params.b, params.seqlen_q, scalar_type, max_seqlen_in_batch_q, total_q);
-  at::Tensor indices_k = cu_seqlens_to_indices(cu_seqlens_k, params.b, params.seqlen_k, scalar_type, max_seqlen_in_batch_k, total_k);
+  at::Tensor indices_k;
+  if (params.seqlen_q == params.seqlen_k) {
+    indices_k = indices_q;
+  } else {
+    indices_k = cu_seqlens_to_indices(cu_seqlens_k, params.b, params.seqlen_k, scalar_type, max_seqlen_in_batch_k, total_k);
+  }
   auto unpad_q = index_first_axis(q, indices_q);
   auto unpad_k = index_first_axis(k, indices_k);
   auto unpad_v = index_first_axis(v, indices_k);
