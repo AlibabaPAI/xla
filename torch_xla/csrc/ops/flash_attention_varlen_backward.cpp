@@ -58,65 +58,7 @@ void custom_call_flash_attention_varlen_backward(cudaStream_t stream, void** buf
   FlashAttentionBackwardParams params;
   params.FromString(std::move(opaque_str));
   int buf_offset = params.enable_alibi_slopes;
-  Flash_bwd_params launch_params;
-
-  // Reset the parameters
-  memset(&launch_params, 0, sizeof(launch_params));
-
-  launch_params.is_bf16 = params.is_bf16;
-
-  // Set the pointers and strides.
-
-  // All stride are in elements, not bytes.
-  launch_params.q_row_stride = params.q_row_stride;
-  launch_params.k_row_stride = params.k_row_stride;
-  launch_params.v_row_stride = params.v_row_stride;
-  launch_params.q_head_stride = params.q_head_stride;
-  launch_params.k_head_stride = params.k_head_stride;
-  launch_params.v_head_stride = params.v_head_stride;
-  // launch_params.o_ptr = buffers[4]; TODO(wenting.swt)
-  launch_params.o_row_stride = params.o_row_stride;
-  launch_params.o_head_stride = params.o_head_stride;
-  
-  launch_params.alibi_slopes_ptr = buf_offset > 0 ? buffers[9] : nullptr;
-
-  launch_params.alibi_slopes_batch_stride = params.alibi_slopes_batch_stride;
-
-  // P = softmax(QK^T)
-  launch_params.p_ptr = nullptr;  // no softmax returned always
-
-  // TODO(wenting.swt): softmax_lse is padding
-  // launch_params.softmax_lse_ptr = buffers[5];
-
-  // Set the dimensions.
-  launch_params.b = params.b;
-  launch_params.h = params.h;
-  launch_params.h_k = params.h_k;
-  launch_params.h_h_k_ratio = params.h_h_k_ratio;
-  launch_params.d = params.d;
-  launch_params.d_rounded = params.d_rounded;
-
-  // Set the different scale values.
-  launch_params.scale_softmax = params.scale_softmax;
-  launch_params.scale_softmax_log2 = params.scale_softmax_log2;
-
-  launch_params.p_dropout = params.p_dropout;
-  launch_params.p_dropout_in_uint8_t = params.p_dropout_in_uint8_t;
-  launch_params.rp_dropout = params.rp_dropout;
-  launch_params.scale_softmax_rp_dropout = params.scale_softmax_rp_dropout;
-
-  launch_params.is_seqlens_k_cumulative = true;
-
-  launch_params.do_row_stride = params.do_row_stride;
-  launch_params.do_head_stride = params.do_head_stride;
-
-  launch_params.dq_row_stride = params.dq_row_stride;
-  launch_params.dk_row_stride = params.dk_row_stride;
-  launch_params.dv_row_stride = params.dv_row_stride;
-  launch_params.dq_head_stride = params.dq_head_stride;
-  launch_params.dk_head_stride = params.dk_head_stride;
-  launch_params.dv_head_stride = params.dv_head_stride;
-
+  auto scalar_type = params.is_bf16 ? torch::kBFloat16 : torch::kFloat16;
 
   cudaStream_t torch_stream = at::cuda::getCurrentCUDAStream().stream();
   cudaEvent_t torch_wait_xla_event;
@@ -125,8 +67,16 @@ void custom_call_flash_attention_varlen_backward(cudaStream_t stream, void** buf
   cudaEventCreateWithFlags(&xla_wait_torch_event, cudaEventDisableTiming);
   cudaEventRecord(torch_wait_xla_event, stream);
   cudaStreamWaitEvent(torch_stream, torch_wait_xla_event);
-  auto scalar_type = params.is_bf16 ? torch::kBFloat16 : torch::kFloat16;
+
+  auto cuda_stream = at::cuda::getDefaultCUDAStream();
+  at::cuda::CUDAStreamGuard guard(cuda_stream);
+
   auto opts = torch::TensorOptions().dtype(scalar_type).device(torch::kCUDA);
+
+  // Inputs
+  at::Tensor do_ = torch::from_blob(
+    buffers[0],
+    {params.b * params.seqlen_q, params.h, params.d}, opts);
   at::Tensor q = torch::from_blob(
     buffers[1],
     {params.b * params.seqlen_q, params.h, params.d}, opts);
@@ -151,6 +101,33 @@ void custom_call_flash_attention_varlen_backward(cudaStream_t stream, void** buf
     {params.b + 1}, opts.dtype(torch::kInt32)
   );
 
+  // Outputs
+  at::Tensor dq = torch::from_blob(
+    buffers[9 + buf_offset],
+    {params.b * params.seqlen_q, params.h, params.d}, opts);
+
+  at::Tensor dk = torch::from_blob(
+    buffers[10 + buf_offset],
+    {params.b * params.seqlen_k, params.h_k, params.d}, opts);
+
+  at::Tensor dv = torch::from_blob(
+    buffers[11 + buf_offset],
+    {params.b * params.seqlen_k, params.h_k, params.d}, opts);
+
+  at::Tensor dsoftmax_sum = torch::from_blob(
+    buffers[12 + buf_offset],
+    {params.b, params.h, params.seqlen_q}, opts.dtype(torch::kFloat));
+
+  // Fill zeros for outputs.
+  // cudaMemsetAsync(buffers[9 + buf_offset], 0,params.b * params.seqlen_q * params.h * params.d * sizeof(scalar_type), cuda_stream);
+  // cudaMemsetAsync(buffers[10 + buf_offset], 0, params.b * params.seqlen_q * params.h * params.d * sizeof(scalar_type), cuda_stream);
+  // cudaMemsetAsync(buffers[11 + buf_offset], 0, params.b * params.seqlen_q * params.h * params.d * sizeof(scalar_type), cuda_stream);
+  // cudaMemsetAsync(buffers[12 + buf_offset], 0, params.b * params.seqlen_q * params.h * sizeof(torch::kFloat), cuda_stream);
+  dq.fill_(0);
+  dk.fill_(0);
+  dv.fill_(0);
+  dsoftmax_sum.fill_(0);
+
   int max_seqlen_in_batch_q = params.seqlen_q;
   int max_seqlen_in_batch_k = params.seqlen_k;
   int total_q = params.b * params.seqlen_q;
@@ -160,27 +137,79 @@ void custom_call_flash_attention_varlen_backward(cudaStream_t stream, void** buf
   if (params.seqlen_q == params.seqlen_k) {
     indices_k = indices_q;
   } else {
+    // FIXME(wenting.swt): seqlen_q > seqlen_k
     indices_k = cu_seqlens_to_indices(cu_seqlens_k, params.b, params.seqlen_k, scalar_type, max_seqlen_in_batch_k, total_k);
   }
+
+  // The unpaded inputs
+  auto unpad_do = index_first_axis(do_, indices_q);
   auto unpad_q = index_first_axis(q, indices_q);
   auto unpad_k = index_first_axis(k, indices_k);
   auto unpad_v = index_first_axis(v, indices_k);
   auto unpad_o = index_first_axis(o, indices_q);
-  auto unpad_softmax_lse = softmax_lse.index({torch::indexing::Slice(), torch::indexing::Slice(), torch::indexing::Slice(0, max_seqlen_in_batch_q)});
+  auto unpad_softmax_lse = softmax_lse.index({torch::indexing::Slice(), torch::indexing::Slice(), torch::indexing::Slice(0, max_seqlen_in_batch_q)}).contiguous();
 
+  // The upaded outputs
+  at::Tensor unpad_dq = at::zeros({total_q, params.h, params.d}, opts);
+  at::Tensor unpad_dk = at::zeros({total_k, params.h_k, params.d}, opts);
+  at::Tensor unpad_dv = at::zeros({total_k, params.h_k, params.d}, opts);
+  // the upaded dsoftmax_lse is inited later
+
+  Flash_bwd_params launch_params;
+
+  // Reset the parameters
+  memset(&launch_params, 0, sizeof(launch_params));
+
+  launch_params.is_bf16 = params.is_bf16;
+
+  // Set the pointers and strides.
   launch_params.q_ptr = unpad_q.data_ptr();
   launch_params.k_ptr = unpad_k.data_ptr();
   launch_params.v_ptr = unpad_v.data_ptr();
   launch_params.o_ptr = unpad_o.data_ptr();
-  launch_params.softmax_lse_ptr = unpad_softmax_lse.data_ptr();
+
+  // All stride are in elements, not bytes.
+  launch_params.q_row_stride = params.q_row_stride;
+  launch_params.k_row_stride = params.k_row_stride;
+  launch_params.v_row_stride = params.v_row_stride;
+  launch_params.q_head_stride = params.q_head_stride;
+  launch_params.k_head_stride = params.k_head_stride;
+  launch_params.v_head_stride = params.v_head_stride;
+  launch_params.o_row_stride = params.o_row_stride;
+  launch_params.o_head_stride = params.o_head_stride;
+
   launch_params.cu_seqlens_q = static_cast<int*>(cu_seqlens_q.data_ptr());
   launch_params.cu_seqlens_k = static_cast<int*>(cu_seqlens_k.data_ptr());
-  
+  launch_params.softmax_lse_ptr = unpad_softmax_lse.data_ptr();
+
+  launch_params.alibi_slopes_ptr = buf_offset > 0 ? buffers[9] : nullptr;
+
+  launch_params.alibi_slopes_batch_stride = params.alibi_slopes_batch_stride;
+
+  // P = softmax(QK^T)
+  launch_params.p_ptr = nullptr;  // no softmax returned always
+
+  // Set the dimensions.
+  launch_params.b = params.b;
+  launch_params.h = params.h;
+  launch_params.h_k = params.h_k;
+  launch_params.h_h_k_ratio = params.h_h_k_ratio;
   launch_params.seqlen_q = max_seqlen_in_batch_q;
   launch_params.seqlen_k = max_seqlen_in_batch_k;
   auto round_multiple = [](int x, int m) { return (x + m - 1) / m * m; };
   launch_params.seqlen_q_rounded = round_multiple(max_seqlen_in_batch_q, 128);
   launch_params.seqlen_k_rounded = round_multiple(max_seqlen_in_batch_k, 128);
+  launch_params.d = params.d;
+  launch_params.d_rounded = params.d_rounded;
+
+  // Set the different scale values.
+  launch_params.scale_softmax = params.scale_softmax;
+  launch_params.scale_softmax_log2 = params.scale_softmax_log2;
+
+  launch_params.p_dropout = params.p_dropout;
+  launch_params.p_dropout_in_uint8_t = params.p_dropout_in_uint8_t;
+  launch_params.rp_dropout = params.rp_dropout;
+  launch_params.scale_softmax_rp_dropout = params.scale_softmax_rp_dropout;
 
   if (max_seqlen_in_batch_q == 1) { params.is_causal = false; }
   if (params.is_causal) { params.window_size_right = 0; }
@@ -204,31 +233,18 @@ void custom_call_flash_attention_varlen_backward(cudaStream_t stream, void** buf
   launch_params.window_size_left = params.window_size_left;
   launch_params.window_size_right = params.window_size_right;
 
-  // Inputs
-  at::Tensor do_ = torch::from_blob(
-    buffers[0],
-    {params.b * params.seqlen_q, params.h, params.d}, opts);
-  at::Tensor unpad_do = index_first_axis(do_, indices_q);
+  launch_params.is_seqlens_k_cumulative = true;
 
-  // Outputs
-  at::Tensor dq = torch::from_blob(
-    buffers[9 + buf_offset],
-    {params.b * params.seqlen_q, params.h, params.d}, opts);
-  at::Tensor unpad_dq = at::zeros({total_q, params.h, params.d}, opts);
+  launch_params.do_row_stride = params.do_row_stride;
+  launch_params.do_head_stride = params.do_head_stride;
 
-  at::Tensor dk = torch::from_blob(
-    buffers[10 + buf_offset],
-    {params.b * params.seqlen_k, params.h_k, params.d}, opts);
-  at::Tensor unpad_dk = at::zeros({total_k, params.h_k, params.d}, opts);
+  launch_params.dq_row_stride = params.dq_row_stride;
+  launch_params.dk_row_stride = params.dk_row_stride;
+  launch_params.dv_row_stride = params.dv_row_stride;
+  launch_params.dq_head_stride = params.dq_head_stride;
+  launch_params.dk_head_stride = params.dk_head_stride;
+  launch_params.dv_head_stride = params.dv_head_stride;
 
-  at::Tensor dv = torch::from_blob(
-    buffers[11 + buf_offset],
-    {params.b * params.seqlen_k, params.h_k, params.d}, opts);
-  at::Tensor unpad_dv = at::zeros({total_k, params.h_k, params.d}, opts);
-
-  at::Tensor dsoftmax_sum = torch::from_blob(
-    buffers[12 + buf_offset],
-    {params.b, params.h, params.seqlen_q}, opts.dtype(torch::kFloat));
   at::Tensor rounded_dsoftmax_sum = at::zeros(
     {params.b, params.h, launch_params.seqlen_q_rounded}, opts.dtype(torch::kFloat));
 

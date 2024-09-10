@@ -65,12 +65,6 @@ void custom_call_flash_attention_varlen_forward(cudaStream_t stream, void** buff
 
   auto opts = torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA);
 
-  at::Tensor cu_seqlens_q = torch::from_blob(
-      buffers[7 + buf_offset],
-      {params.b + 1}, opts);
-  at::Tensor cu_seqlens_k = torch::from_blob(
-      buffers[8 + buf_offset],
-      {params.b + 1}, opts);
   at::Tensor q = torch::from_blob(
       buffers[0],
       {params.b * params.seqlen_q, params.h, params.d}, opts.dtype(scalar_type));
@@ -83,11 +77,35 @@ void custom_call_flash_attention_varlen_forward(cudaStream_t stream, void** buff
   at::Tensor attention_mask = torch::from_blob(
       buffers[3],
       {params.b, params.seqlen_k}, opts);
+  at::Tensor softmax_lse = torch::from_blob(
+    buffers[4 + buf_offset],
+    {params.b, params.h, params.seqlen_q},
+    opts.dtype(torch::kFloat)
+  );
+  at::Tensor o_output = torch::from_blob(
+      buffers[5 + buf_offset],
+      {params.b * params.seqlen_q, params.h * params.d}, opts.dtype(scalar_type));
+  at::Tensor cu_seqlens_q = torch::from_blob(
+      buffers[7 + buf_offset],
+      {params.b + 1}, opts);
+  at::Tensor cu_seqlens_k = torch::from_blob(
+      buffers[8 + buf_offset],
+      {params.b + 1}, opts);
+  at::Tensor rng_state = torch::from_blob(
+      buffers[6 + buf_offset],
+      {2}, opts.dtype(torch::kInt64));
+  // Fill zeros for outputs.
+  // cudaMemsetAsync(buffers[4 + buf_offset], 0, params.b * params.h * params.seqlen_q * sizeof(torch::kFloat), cuda_stream);
+  // cudaMemsetAsync(buffers[5 + buf_offset], 0, params.b * params.seqlen_q * params.h * params.d * sizeof(scalar_type), cuda_stream);
+  cudaMemsetAsync(rng_state.data_ptr(), 0, 2 * sizeof(int64_t), cuda_stream);
+  softmax_lse.fill_(0);
+  o_output.fill_(0);
+  cu_seqlens_k.fill_(0);
+  // cudaMemsetAsync(buffers[8 + buf_offset], 0, (params.b + 1) * sizeof(int32_t), cuda_stream);
 
   int max_seqlen_in_batch_k = params.seqlen_k;
   int total_k = params.b * params.seqlen_k;
 
-  cudaMemsetAsync(buffers[8 + buf_offset], 0, (params.b + 1) * sizeof(int32_t), cuda_stream);
   at::Tensor indices_k = mask_to_indices(attention_mask, max_seqlen_in_batch_k, total_k, cu_seqlens_k);
   auto unpad_k = index_first_axis(k, indices_k);
   auto unpad_v = index_first_axis(v, indices_k);
@@ -208,15 +226,9 @@ void custom_call_flash_attention_varlen_forward(cudaStream_t stream, void** buff
   launch_params.num_splits = params.num_splits;
 
   int64_t counter_offset = params.b * params.h * 32;
-  auto options =
-      torch::TensorOptions().dtype(torch::kFloat).device(torch::kCUDA);
-  auto rng_state = torch::from_blob(
-      buffers[6 + buf_offset],
-      {2}, options.dtype(torch::kInt64));
+
   // Forward kernel will populate memory with the seed and offset.
   launch_params.rng_state = reinterpret_cast<uint64_t*>(rng_state.data_ptr());
-  // rng_state.fill_(0);
-  cudaMemsetAsync(rng_state.data_ptr(), 0, 2 * sizeof(int64_t), cuda_stream);
 
   if ((1.f - launch_params.p_dropout) > 0.0) {
     // number of times random will be generated per thread, to offset philox
@@ -239,16 +251,8 @@ void custom_call_flash_attention_varlen_forward(cudaStream_t stream, void** buff
     });
   });
 
-  at::Tensor softmax_lse = torch::from_blob(
-    buffers[4 + buf_offset],
-    {params.b, params.h, params.seqlen_q},
-    opts.dtype(torch::kFloat)
-  );
   softmax_lse.slice(2, 0, max_seqlen_in_batch_q).copy_(unpad_softmax_lse.slice(2, 0, max_seqlen_in_batch_q));
 
-  at::Tensor o_output = torch::from_blob(
-      buffers[5 + buf_offset],
-      {params.b * params.seqlen_q, params.h * params.d}, opts.dtype(scalar_type));
   torch::Tensor repeated_indices_q = indices_q.unsqueeze(1).expand(
     {indices_q.size(0), params.h * params.d});
   o_output.scatter_(0, repeated_indices_q, unpad_output);

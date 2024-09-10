@@ -383,7 +383,7 @@ FlashAttentionBackwardParams get_flash_attention_backward_params(
     CHECK_SHAPE(cu_seqlens_q.value(), batch_size + 1);
     CHECK_SHAPE(cu_seqlens_k.value(), batch_size + 1);
   }
-  
+
   int alibi_slopes_batch_stride = 0;
   bool enable_alibi_slopes = false;
   if (alibi_slopes_.has_value()) {
@@ -465,7 +465,7 @@ at::Tensor index_first_axis(const at::Tensor& input, const at::Tensor& indices) 
   at::Tensor gather_input = torch::gather(flat_input, 0, repeated_indices);
   std::vector<int64_t> reshaped_size = {-1};
   reshaped_size.insert(reshaped_size.end(), other_shape.begin(), other_shape.end());
-  return gather_input.reshape(reshaped_size);
+  return gather_input.reshape(reshaped_size).contiguous();
 }
 
 }  // namespace torch_xla

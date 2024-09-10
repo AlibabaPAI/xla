@@ -88,7 +88,7 @@ def setup_env():
     ],
 )
 @pytest.mark.parametrize("dropout_p", [0.0])
-def test_flash_attn_output(seqlen_q, seqlen_k, d, dropout_p, causal, softmax_scale, 
+def test_flash_attn_output(seqlen_q, seqlen_k, d, dropout_p, causal, softmax_scale,
                                   local, alibi, deterministic, mha_type, dtype):
     if d % 8 != 0:
         pytest.skip(reason="Expected head_size_og % 8 == 0 to be true")
@@ -128,7 +128,7 @@ def test_flash_attn_output(seqlen_q, seqlen_k, d, dropout_p, causal, softmax_sca
         device=device,
         dtype=dtype,
         requires_grad=False)
-    
+
     attention_mask = torch.zeros(
         batch_size,
         seqlen_k,
@@ -155,11 +155,11 @@ def test_flash_attn_output(seqlen_q, seqlen_k, d, dropout_p, causal, softmax_sca
         alibi_slopes = None
 
     out_fa, softmax_lse, _ = flash_attn_varlen_func(
-        q_cuda,
-        k_cuda,
-        v_cuda,
-        cu_seqlens_q,
-        cu_seqlens_k,
+        q_cuda.contiguous(),
+        k_cuda.contiguous(),
+        v_cuda.contiguous(),
+        cu_seqlens_q.contiguous(),
+        cu_seqlens_k.contiguous(),
         max_seqlen_in_batch_q,
         max_seqlen_in_batch_k,
         dropout_p=dropout_p,
@@ -183,7 +183,7 @@ def test_flash_attn_output(seqlen_q, seqlen_k, d, dropout_p, causal, softmax_sca
     if alibi:
         alibi_slopes = alibi_slopes.cpu()
     torch.cuda.synchronize()
-    
+
     device = ta.lazy_device()
     torch.random.manual_seed(0)
     q_xla = q.to(device)
@@ -196,7 +196,7 @@ def test_flash_attn_output(seqlen_q, seqlen_k, d, dropout_p, causal, softmax_sca
     if alibi:
         alibi_slopes = alibi_slopes.cpu().to(device)
     softmax_lse_xla, out_xla, _, cu_seqlen_q_xla, cu_seqlen_k_xla  = torch_xla._XLAC._flash_attention_forward(
-        q_xla, k_xla, v_xla, attention_mask_xla,
+        q_xla.contiguous(), k_xla.contiguous(), v_xla.contiguous(), attention_mask_xla.contiguous(),
         alibi_slopes, dropout_p, softmax_scale,
         False, causal, window_size[0], window_size[1], True,
         None)
@@ -210,7 +210,7 @@ def test_flash_attn_output(seqlen_q, seqlen_k, d, dropout_p, causal, softmax_sca
     cu_seqlen_k_xla = cu_seqlen_k_xla.cpu().detach()
     softmax_lse_xla = softmax_lse_xla.cpu().detach()
     attention_mask_xla = attention_mask_xla.cpu().detach()
-    
+
     assert torch.allclose(q_xla, q, rtol=1e-3, atol=1e-3, equal_nan=True)
     assert torch.allclose(k_xla, k, rtol=1e-3, atol=1e-3, equal_nan=True)
     assert torch.allclose(v_xla, v, rtol=1e-3, atol=1e-3, equal_nan=True)

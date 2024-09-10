@@ -211,7 +211,7 @@ def test_flash_attn_backward(seqlen_q, seqlen_k, d, dropout_p, causal,
     cu_seqlens_q, cu_seqlens_k = cu_seq_lens
 
     max_seqlen_q, max_seqlen_k = max_seq_lens
-    
+
 
     if alibi:
         alibi_slopes = torch.rand(
@@ -219,19 +219,18 @@ def test_flash_attn_backward(seqlen_q, seqlen_k, d, dropout_p, causal,
     else:
         alibi_slopes = None
     dq_cuda, dk_cuda, dv_cuda, softmax_d_cuda = flash_attn_cuda.varlen_bwd(
-        do_cuda, q_cuda, k_cuda, v_cuda, o_cuda, softmax_lse_cuda, dq_cuda,
-        dk_cuda, dv_cuda, cu_seqlens_q, cu_seqlens_k,
+        do_cuda.contiguous(), q_cuda.contiguous(), k_cuda.contiguous(),
+        v_cuda.contiguous(), o_cuda.contiguous(), softmax_lse_cuda.contiguous(),
+        dq_cuda, dk_cuda, dv_cuda, cu_seqlens_q, cu_seqlens_k,
         alibi_slopes, max_seqlen_q, max_seqlen_k, dropout_p, softmax_scale, False,
         causal, window_size[0], window_size[1], deterministic,
         None, rng_state)
-    print(f'dq_cuda={dq_cuda}')
 
     dq_cuda = pad_input(dq_cuda, indices_q, batch_size, seqlen_q)
     dk_cuda = pad_input(dk_cuda, indices_k, batch_size, seqlen_k)
     dv_cuda = pad_input(dv_cuda, indices_k, batch_size, seqlen_k)
     softmax_d_cuda = softmax_d_cuda[:, :, :seqlen_q]
-    
-    
+
     q = q.cpu().detach()
     k = k.cpu().detach()
     v = v.cpu().detach()
@@ -247,7 +246,7 @@ def test_flash_attn_backward(seqlen_q, seqlen_k, d, dropout_p, causal,
     if alibi:
         alibi_slopes = alibi_slopes.cpu()
     torch.cuda.synchronize()
-    
+
     device = ta.lazy_device()
     torch.random.manual_seed(101)
     q_xla = q.to(device)
@@ -257,7 +256,7 @@ def test_flash_attn_backward(seqlen_q, seqlen_k, d, dropout_p, causal,
     do_xla = do.to(device)
     softmax_lse_xla = softmax_lse.to(device)
     rng_state_xla = rng_state.to(device)
-    
+
     dq_xla = dq.to(device)
     dk_xla = dk.to(device)
     dv_xla = dv.to(device)
@@ -273,8 +272,9 @@ def test_flash_attn_backward(seqlen_q, seqlen_k, d, dropout_p, causal,
     if alibi:
         alibi_slopes = alibi_slopes.cpu().to(device)
     dq_xla, dk_xla, dv_xla, softmax_d_xla  = torch_xla._XLAC._flash_attention_backward(
-        do_xla, q_xla, k_xla, v_xla, o_xla, softmax_lse_xla,
-        cu_seqlens_q, cu_seqlens_k, alibi_slopes,
+        do_xla.contiguous(), q_xla.contiguous(), k_xla.contiguous(), v_xla.contiguous(),
+        o_xla.contiguous(), softmax_lse_xla.contiguous(),
+        cu_seqlens_q.contiguous(), cu_seqlens_k.contiguous(), alibi_slopes,
         dropout_p, softmax_scale, False, causal, window_size[0],
         window_size[1], deterministic, None, rng_state_xla)
 

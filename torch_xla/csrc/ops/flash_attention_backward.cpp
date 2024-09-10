@@ -211,7 +211,6 @@ void custom_call_flash_attention_backward(cudaStream_t stream, void** buffers,
   launch_params.window_size_right = params.window_size_right;
 
   launch_params.is_seqlens_k_cumulative = true;
-  
 
   // P = softmax(QK^T)
   launch_params.p_ptr = nullptr;  // no softmax returned always
@@ -241,7 +240,7 @@ void custom_call_flash_attention_backward(cudaStream_t stream, void** buffers,
   launch_params.dsoftmax_sum = rounded_dsoftmax_sum.data_ptr();
 
   launch_params.deterministic = params.deterministic;
-  
+
   launch_params.dq_accum_split_stride =
       !launch_params.deterministic ? 0 : dq_accum.stride(0);
 
