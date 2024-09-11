@@ -38,10 +38,6 @@ void TorchCUDACachingAllocator::DeallocateRaw(void* ptr) {
 
 void TorchCUDACachingAllocator::SetStreamAndPreallocateMemory(void* stream) {
   auto new_cuda_stream = static_cast<cudaStream_t>(stream);
-  if (cuda_stream_ != nullptr && new_cuda_stream != cuda_stream_) {
-    LOG(FATAL) <<  // Crash OK.
-        "Trying to set the stream twice. This isn't supported. ";
-  }
   VLOG(3) << "Setting cuda stream " << stream
           << " for TorchCUDACachingAllocator on device "
           << static_cast<int>(device_index_);
