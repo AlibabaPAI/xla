@@ -24,6 +24,7 @@ const char* const kEnvPjrtAllocatorCudaAsync = "PJRT_ALLOCATOR_CUDA_ASYNC";
 const char* const kEnvPjrtAllocatorPreallocate = "PJRT_ALLOCATOR_PREALLOCATE";
 const char* const kEnvPjrtAllocatorFraction = "PJRT_ALLOCATOR_FRACTION";
 const char* const kEnvPjrtDynamicPlugins = "PJRT_DYNAMIC_PLUGINS";
+const char* const kEnvPjrtUseTorchAllocator = "PJRT_USE_TORCH_ALLOCATOR";
 
 }  // namespace env
 }  // namespace runtime

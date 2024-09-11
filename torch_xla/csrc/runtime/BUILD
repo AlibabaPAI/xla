@@ -204,6 +204,7 @@ cc_library(
     ":profiler",
     ":sys_util",
     ":tf_logging",
+    ":torch_allocator",
     ":xla_coordinator",
     "@xla//xla/service:gpu_plugin",
     "@xla//xla/pjrt/gpu:se_gpu_pjrt_client",
@@ -368,6 +369,18 @@ cc_library(
     deps = [
         "@xla//xla:statusor",
         "@xla//xla/service:platform_util",
+    ],
+)
+
+cc_library(
+    name = "torch_allocator",
+    srcs = ["torch_allocator.cc"],
+    hdrs = ["torch_allocator.h"],
+    deps = [
+        ":tf_logging",
+        "@tsl//tsl/framework:allocator",
+        "@torch//:headers",
+        "@xla//xla/stream_executor/gpu:gpu_types_header",
     ],
 )
 

@@ -5,6 +5,7 @@
 #include "torch_xla/csrc/runtime/profiler.h"
 #include "torch_xla/csrc/runtime/sys_util.h"
 #include "torch_xla/csrc/runtime/tf_logging.h"
+#include "torch_xla/csrc/runtime/torch_allocator.h"
 #include "torch_xla/csrc/runtime/xla_coordinator.h"
 #include "xla/pjrt/c/pjrt_c_api.h"
 #include "xla/pjrt/distributed/client.h"
@@ -14,6 +15,14 @@
 #include "xla/pjrt/pjrt_api.h"
 #include "xla/pjrt/pjrt_c_api_client.h"
 #include "xla/pjrt/tfrt_cpu_pjrt_client.h"
+#include "xla/stream_executor/device_description.h"
+#include "xla/stream_executor/device_memory.h"
+#include "xla/stream_executor/device_memory_allocator.h"
+#include "xla/stream_executor/integrations/device_mem_allocator.h"
+#include "xla/stream_executor/integrations/tf_allocator_adapter.h"
+#include "xla/stream_executor/platform.h"
+#include "xla/stream_executor/stream.h"
+#include "xla/stream_executor/stream_executor.h"
 
 namespace torch_xla {
 namespace runtime {
@@ -52,6 +61,117 @@ void RegisterPjRtPlugin(std::string name,
                         std::shared_ptr<const PjRtPlugin> plugin) {
   TF_VLOG(3) << "Registering PjRt plugin " << name;
   pjrt_plugins_[name] = plugin;
+}
+
+// Copied from openxla's
+// xla/pjrt/gpu/se_gpu_pjrt_client.cc::BuildLocalDeviceStates
+absl::StatusOr<std::map<int, std::unique_ptr<xla::LocalDeviceState>>>
+BuildLocalDeviceStates(xla::LocalClient* xla_client) {
+  std::map<int, std::unique_ptr<xla::LocalDeviceState>> addressable_devices;
+  for (stream_executor::StreamExecutor* executor :
+       xla_client->backend().stream_executors()) {
+    addressable_devices.emplace(
+        executor->device_ordinal(),
+        std::make_unique<xla::LocalDeviceState>(
+            executor, xla_client, xla::LocalDeviceState::kComputeSynchronized,
+            /*max_inflight_computations=*/32,
+            /*allow_event_reuse=*/true, /*use_callback_stream=*/true));
+  }
+  return std::move(addressable_devices);
+}
+
+// Modified from openxla's
+// xla/pjrt/gpu/se_gpu_pjrt_client.cc::GetStreamExecutorGpuDeviceAllocator
+// change to use torch allocator
+absl::StatusOr<std::unique_ptr<stream_executor::DeviceMemoryAllocator>>
+GetTorchAllocator(stream_executor::Platform* platform,
+                  const xla::GpuAllocatorConfig& allocator_config,
+                  const std::map<int, std::unique_ptr<xla::LocalDeviceState>>&
+                      addressable_devices) {
+  std::vector<stream_executor::MultiDeviceAdapter::AllocatorInfo> allocators;
+  LOG(INFO) << "Using PyTorch CUDACachingAllocator.";
+  for (const auto& ordinal_and_device : addressable_devices) {
+    stream_executor::StreamExecutor* executor =
+        ordinal_and_device.second->executor();
+    int device_ordinal = executor->device_ordinal();
+    auto allocator =
+        std::make_unique<TorchCUDACachingAllocator>(device_ordinal);
+    allocator->SetStreamAndPreallocateMemory(
+        ordinal_and_device.second->compute_stream()
+            ->platform_specific_handle()
+            .stream);
+    allocators.emplace_back(std::move(allocator),
+                            ordinal_and_device.second->compute_stream(),
+                            /*memory_space=*/0);
+  }
+
+  // Add any additional allocators for alternate memory spaces.
+  for (const auto& ordinal_and_device : addressable_devices) {
+    TF_ASSIGN_OR_RETURN(
+        auto collective_bfc_allocator,
+        xla::CreateCollectiveBFCAllocator(
+            ordinal_and_device.second->executor(),
+            /*memory_fraction=*/1.0 - allocator_config.memory_fraction,
+            allocator_config.collective_memory_size));
+    allocators.emplace_back(std::move(collective_bfc_allocator),
+                            ordinal_and_device.second->compute_stream(),
+                            /*memory_space=*/1);
+  }
+
+  for (const auto& ordinal_and_device : addressable_devices) {
+    auto host_allocator =
+        xla::GetGpuHostAllocator(ordinal_and_device.second->executor());
+    allocators.emplace_back(
+        std::move(host_allocator), ordinal_and_device.second->compute_stream(),
+        /*memory_space=*/
+        static_cast<int>(stream_executor::MemoryType::kHost));
+  }
+
+  return std::make_unique<stream_executor::MultiDeviceAdapter>(
+      platform, std::move(allocators));
+}
+
+// Modified from xla::GetStreamExecutorGpuClient, change to use torch allocator
+absl::StatusOr<std::unique_ptr<xla::PjRtClient>>
+GetPjRtClientWithTorchAllocator(const xla::GpuClientOptions& options) {
+  auto pjrt_platform_name = xla::CudaName();
+
+  TF_ASSIGN_OR_RETURN(
+      xla::LocalClient * xla_client,
+      xla::GetGpuXlaClient(options.platform_name, options.allowed_devices));
+  std::map<int, std::unique_ptr<xla::LocalDeviceState>> local_device_states;
+  TF_ASSIGN_OR_RETURN(local_device_states, BuildLocalDeviceStates(xla_client));
+  xla::EnablePeerAccess(xla_client->backend().stream_executors());
+
+  TF_ASSIGN_OR_RETURN(
+      auto allocator,
+      GetTorchAllocator(xla_client->platform(), options.allocator_config,
+                        local_device_states));
+
+  auto host_memory_allocator =
+      xla::GetGpuHostAllocator(local_device_states.begin()->second->executor());
+
+  std::vector<std::unique_ptr<xla::PjRtStreamExecutorDevice>> devices;
+  auto gpu_run_options = std::make_unique<xla::gpu::GpuExecutableRunOptions>();
+  if (options.enable_mock_nccl) {
+    gpu_run_options->set_enable_mock_nccl_collectives();
+  }
+  std::shared_ptr<xla::KeyValueStoreInterface> kv_store = options.kv_store;
+  if (options.enable_mock_nccl) {
+    kv_store = std::make_shared<xla::InMemoryKeyValueStore>();
+  }
+  TF_RET_CHECK(options.num_nodes == 1 || kv_store != nullptr);
+  TF_RETURN_IF_ERROR(xla::BuildDistributedDevices(
+      pjrt_platform_name, std::move(local_device_states), options.node_id,
+      options.num_nodes, &devices, gpu_run_options.get(), kv_store,
+      options.enable_mock_nccl));
+
+  return std::unique_ptr<xla::PjRtClient>(
+      std::make_unique<xla::StreamExecutorGpuClient>(
+          pjrt_platform_name, xla_client, std::move(devices), options.node_id,
+          std::move(allocator), std::move(host_memory_allocator),
+          options.should_stage_host_to_device_transfers,
+          std::move(gpu_run_options)));
 }
 
 std::tuple<std::unique_ptr<xla::PjRtClient>, std::unique_ptr<XlaCoordinator>>
@@ -167,7 +287,13 @@ InitializePjRt(const std::string& device_type) {
     options.platform_name = "gpu";
     options.should_stage_host_to_device_transfers = true;
     options.kv_store = kv_store;
-    client = std::move(xla::GetStreamExecutorGpuClient(options).value());
+    bool use_torch_allocator =
+        sys_util::GetEnvBool(env::kEnvPjrtUseTorchAllocator, false);
+    if (use_torch_allocator) {
+      client = std::move(GetPjRtClientWithTorchAllocator(options).value());
+    } else {
+      client = std::move(xla::GetStreamExecutorGpuClient(options).value());
+    }
   } else if (device_type == "XPU") {
     TF_VLOG(1) << "Initializing PjRt XPU client...";
     XLA_CHECK_OK(
