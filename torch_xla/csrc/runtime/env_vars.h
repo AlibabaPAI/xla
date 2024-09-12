@@ -34,6 +34,7 @@ extern const char* const kEnvPjrtAllocatorCudaAsync;
 extern const char* const kEnvPjrtAllocatorPreallocate;
 extern const char* const kEnvPjrtAllocatorFraction;
 extern const char* const kEnvPjrtDynamicPlugins;
+extern const char* const kEnvPjrtUseTorchAllocator;
 
 }  // namespace env
 }  // namespace runtime
