@@ -1,19 +1,18 @@
 import warnings
-from collections import OrderedDict
-from typing import (Any, Callable, Dict, Generator, List, Optional, Set, Tuple,
-                    Union, cast)
+from typing import (Any, Callable, Dict, Optional, Union)
 
 import numpy as np
 import torch
 import torch.nn as nn
 from torch._prims_common import TensorLike, TensorSequenceType
-from torch.nn.utils.rnn import PackedSequence
 
 import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.distributed.spmd as spmd
 from torch_xla.distributed.fsdp._init_utils import _materialize_module
 from torch_xla.distributed.fsdp.wrap import recursive_wrap
+from torch_xla.distributed.fsdp.xla_fully_sharded_data_parallel import (
+    _cast_floats_tensors, apply_to_tensors)
 
 FLOAT_DTYPES = [torch.float32, torch.float16, torch.bfloat16]
 
@@ -209,49 +208,3 @@ class SpmdFullyShardedDataParallel(nn.Module):
             "if using an `auto_wrap_policy`")
 
     recursive_wrap(**auto_wrap_kwargs, **fsdp_kwargs)
-
-
-def _cast_floats_tensors(dtype: torch.dtype, *args: Any,
-                         **kwargs: Any) -> Tuple[Any, Any]:
-  """
-  Cast floating point Tensors in *args or **kwargs to dtype if they are not.
-  """
-
-  def fn(t):
-    if t.dtype != dtype and torch.is_floating_point(t):
-      t = t.to(dtype)
-    return t
-
-  return apply_to_tensors(fn, args), apply_to_tensors(fn, kwargs)
-
-
-def apply_to_tensors(
-    fn: Callable, container: Union[torch.Tensor, Dict, List, Tuple, Set]
-) -> Union[torch.Tensor, Dict, List, Tuple, Set]:
-  """Recursively apply to all tensor in different kinds of container types."""
-
-  def _apply(
-      x: Union[torch.Tensor, Dict, List, Tuple, Set]
-  ) -> Union[torch.Tensor, Dict, List, Tuple, Set]:
-    if torch.is_tensor(x):
-      return fn(x)
-    elif isinstance(x, OrderedDict):
-      od = x.__class__()
-      for key, value in x.items():
-        od[key] = _apply(value)
-      return od
-    elif isinstance(x, PackedSequence):
-      _apply(x)
-      return x
-    elif isinstance(x, dict):
-      return {key: _apply(value) for key, value in x.items()}
-    elif isinstance(x, list):
-      return [_apply(x) for x in x]
-    elif isinstance(x, tuple):
-      return tuple(_apply(x) for x in x)
-    elif isinstance(x, set):
-      return {_apply(x) for x in x}
-    else:
-      return x
-
-  return _apply(container)
