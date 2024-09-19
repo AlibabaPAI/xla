@@ -49,9 +49,10 @@ void run_mha_bwd(Flash_bwd_params& params, cudaStream_t stream,
 //  buffers[11] = dk  // this is output
 //  buffers[12] = dv  // this is output
 //  buffers[13] = softmax_d  // this is output
-void custom_call_flash_attention_varlen_backward(cudaStream_t stream, void** buffers,
-                                                const char* opaque,
-                                                size_t opaque_len) {
+void custom_call_flash_attention_varlen_backward(cudaStream_t stream,
+                                                 void** buffers,
+                                                 const char* opaque,
+                                                 size_t opaque_len) {
   std::string opaque_str(opaque, opaque_len);
   TF_VLOG(3) << "custom_call_flash_attention_varlen_backward opaque str: "
              << opaque_str;
@@ -75,54 +76,49 @@ void custom_call_flash_attention_varlen_backward(cudaStream_t stream, void** buf
 
   // Inputs
   at::Tensor do_ = torch::from_blob(
-    buffers[0],
-    {params.b * params.seqlen_q, params.h, params.d}, opts);
+      buffers[0], {params.b * params.seqlen_q, params.h, params.d}, opts);
   at::Tensor q = torch::from_blob(
-    buffers[1],
-    {params.b * params.seqlen_q, params.h, params.d}, opts);
+      buffers[1], {params.b * params.seqlen_q, params.h, params.d}, opts);
   at::Tensor k = torch::from_blob(
-    buffers[2],
-    {params.b * params.seqlen_k, params.h_k, params.d}, opts);
+      buffers[2], {params.b * params.seqlen_k, params.h_k, params.d}, opts);
   at::Tensor v = torch::from_blob(
-    buffers[3],
-    {params.b * params.seqlen_k, params.h_k, params.d}, opts);
+      buffers[3], {params.b * params.seqlen_k, params.h_k, params.d}, opts);
   at::Tensor o = torch::from_blob(
-    buffers[4],
-    {params.b * params.seqlen_q, params.h, params.d}, opts);
-  at::Tensor softmax_lse = torch::from_blob(
-    buffers[5],
-    {params.b, params.h, params.seqlen_q}, opts.dtype(torch::kFloat));
-  at::Tensor cu_seqlens_q = torch::from_blob(
-    buffers[6],
-    {params.b + 1}, opts.dtype(torch::kInt32)
-  );
-  at::Tensor cu_seqlens_k = torch::from_blob(
-    buffers[7],
-    {params.b + 1}, opts.dtype(torch::kInt32)
-  );
+      buffers[4], {params.b * params.seqlen_q, params.h, params.d}, opts);
+  at::Tensor softmax_lse =
+      torch::from_blob(buffers[5], {params.b, params.h, params.seqlen_q},
+                       opts.dtype(torch::kFloat));
+  at::Tensor cu_seqlens_q =
+      torch::from_blob(buffers[6], {params.b + 1}, opts.dtype(torch::kInt32));
+  at::Tensor cu_seqlens_k =
+      torch::from_blob(buffers[7], {params.b + 1}, opts.dtype(torch::kInt32));
 
   // Outputs
-  at::Tensor dq = torch::from_blob(
-    buffers[9 + buf_offset],
-    {params.b * params.seqlen_q, params.h, params.d}, opts);
+  at::Tensor dq =
+      torch::from_blob(buffers[9 + buf_offset],
+                       {params.b * params.seqlen_q, params.h, params.d}, opts);
 
   at::Tensor dk = torch::from_blob(
-    buffers[10 + buf_offset],
-    {params.b * params.seqlen_k, params.h_k, params.d}, opts);
+      buffers[10 + buf_offset],
+      {params.b * params.seqlen_k, params.h_k, params.d}, opts);
 
   at::Tensor dv = torch::from_blob(
-    buffers[11 + buf_offset],
-    {params.b * params.seqlen_k, params.h_k, params.d}, opts);
+      buffers[11 + buf_offset],
+      {params.b * params.seqlen_k, params.h_k, params.d}, opts);
 
   at::Tensor dsoftmax_sum = torch::from_blob(
-    buffers[12 + buf_offset],
-    {params.b, params.h, params.seqlen_q}, opts.dtype(torch::kFloat));
+      buffers[12 + buf_offset], {params.b, params.h, params.seqlen_q},
+      opts.dtype(torch::kFloat));
 
   // Fill zeros for outputs.
-  // cudaMemsetAsync(buffers[9 + buf_offset], 0,params.b * params.seqlen_q * params.h * params.d * sizeof(scalar_type), cuda_stream);
-  // cudaMemsetAsync(buffers[10 + buf_offset], 0, params.b * params.seqlen_q * params.h * params.d * sizeof(scalar_type), cuda_stream);
-  // cudaMemsetAsync(buffers[11 + buf_offset], 0, params.b * params.seqlen_q * params.h * params.d * sizeof(scalar_type), cuda_stream);
-  // cudaMemsetAsync(buffers[12 + buf_offset], 0, params.b * params.seqlen_q * params.h * sizeof(torch::kFloat), cuda_stream);
+  // cudaMemsetAsync(buffers[9 + buf_offset], 0,params.b * params.seqlen_q *
+  // params.h * params.d * sizeof(scalar_type), cuda_stream);
+  // cudaMemsetAsync(buffers[10 + buf_offset], 0, params.b * params.seqlen_q *
+  // params.h * params.d * sizeof(scalar_type), cuda_stream);
+  // cudaMemsetAsync(buffers[11 + buf_offset], 0, params.b * params.seqlen_q *
+  // params.h * params.d * sizeof(scalar_type), cuda_stream);
+  // cudaMemsetAsync(buffers[12 + buf_offset], 0, params.b * params.seqlen_q *
+  // params.h * sizeof(torch::kFloat), cuda_stream);
   dq.fill_(0);
   dk.fill_(0);
   dv.fill_(0);
@@ -132,13 +128,16 @@ void custom_call_flash_attention_varlen_backward(cudaStream_t stream, void** buf
   int max_seqlen_in_batch_k = params.seqlen_k;
   int total_q = params.b * params.seqlen_q;
   int total_k = params.b * params.seqlen_k;
-  at::Tensor indices_q = cu_seqlens_to_indices(cu_seqlens_q, params.b, params.seqlen_q, scalar_type, max_seqlen_in_batch_q, total_q);
+  at::Tensor indices_q =
+      cu_seqlens_to_indices(cu_seqlens_q, params.b, params.seqlen_q,
+                            scalar_type, max_seqlen_in_batch_q, total_q);
   at::Tensor indices_k;
   if (params.seqlen_q == params.seqlen_k) {
     indices_k = indices_q;
   } else {
-    // FIXME(wenting.swt): seqlen_q > seqlen_k
-    indices_k = cu_seqlens_to_indices(cu_seqlens_k, params.b, params.seqlen_k, scalar_type, max_seqlen_in_batch_k, total_k);
+    indices_k =
+        cu_seqlens_to_indices(cu_seqlens_k, params.b, params.seqlen_k,
+                              scalar_type, max_seqlen_in_batch_k, total_k);
   }
 
   // The unpaded inputs
@@ -147,13 +146,17 @@ void custom_call_flash_attention_varlen_backward(cudaStream_t stream, void** buf
   auto unpad_k = index_first_axis(k, indices_k);
   auto unpad_v = index_first_axis(v, indices_k);
   auto unpad_o = index_first_axis(o, indices_q);
-  auto unpad_softmax_lse = softmax_lse.index({torch::indexing::Slice(), torch::indexing::Slice(), torch::indexing::Slice(0, max_seqlen_in_batch_q)}).contiguous();
+  auto unpad_softmax_lse =
+      softmax_lse
+          .index({torch::indexing::Slice(), torch::indexing::Slice(),
+                  torch::indexing::Slice(0, max_seqlen_in_batch_q)})
+          .contiguous();
 
   // The upaded outputs
   at::Tensor unpad_dq = at::zeros({total_q, params.h, params.d}, opts);
   at::Tensor unpad_dk = at::zeros({total_k, params.h_k, params.d}, opts);
   at::Tensor unpad_dv = at::zeros({total_k, params.h_k, params.d}, opts);
-  // the upaded dsoftmax_lse is inited later
+  // the upaded dsoftmax_lse will be inited later
 
   Flash_bwd_params launch_params;
 
@@ -211,17 +214,22 @@ void custom_call_flash_attention_varlen_backward(cudaStream_t stream, void** buf
   launch_params.rp_dropout = params.rp_dropout;
   launch_params.scale_softmax_rp_dropout = params.scale_softmax_rp_dropout;
 
-  if (max_seqlen_in_batch_q == 1) { params.is_causal = false; }
-  if (params.is_causal) { params.window_size_right = 0; }
+  if (max_seqlen_in_batch_q == 1) {
+    params.is_causal = false;
+  }
+  if (params.is_causal) {
+    params.window_size_right = 0;
+  }
 
   if (params.window_size_left >= max_seqlen_in_batch_k) {
-     params.window_size_left = -1;
+    params.window_size_left = -1;
   }
   if (params.window_size_right >= max_seqlen_in_batch_k) {
-     params.window_size_right = -1;
+    params.window_size_right = -1;
   }
 
-  launch_params.is_causal = params.window_size_left < 0 && params.window_size_right == 0;
+  launch_params.is_causal =
+      params.window_size_left < 0 && params.window_size_right == 0;
 
   if (params.window_size_left < 0 && params.window_size_right >= 0) {
     params.window_size_left = max_seqlen_in_batch_k;
@@ -245,8 +253,9 @@ void custom_call_flash_attention_varlen_backward(cudaStream_t stream, void** buf
   launch_params.dk_head_stride = params.dk_head_stride;
   launch_params.dv_head_stride = params.dv_head_stride;
 
-  at::Tensor rounded_dsoftmax_sum = at::zeros(
-    {params.b, params.h, launch_params.seqlen_q_rounded}, opts.dtype(torch::kFloat));
+  at::Tensor rounded_dsoftmax_sum =
+      at::zeros({params.b, params.h, launch_params.seqlen_q_rounded},
+                opts.dtype(torch::kFloat));
 
   launch_params.do_ptr = unpad_do.data_ptr();
   launch_params.dq_ptr = unpad_dq.data_ptr();
@@ -261,8 +270,8 @@ void custom_call_flash_attention_varlen_backward(cudaStream_t stream, void** buf
   at::Tensor dq_accum;
   if (loop) {
     if (!params.deterministic) {
-      dq_accum = torch::empty({total_q + 128 * launch_params.b,
-                               launch_params.h, launch_params.d_rounded},
+      dq_accum = torch::empty({total_q + 128 * launch_params.b, launch_params.h,
+                               launch_params.d_rounded},
                               opts.dtype(at::kFloat));
     } else {
       auto dprops = at::cuda::getCurrentDeviceProperties();
@@ -322,7 +331,6 @@ void custom_call_flash_attention_varlen_backward(cudaStream_t stream, void** buf
 
   launch(launch_params, torch_stream, /*configure=*/false);
 
-
   // For MQA/GQA we need to sum dK and dV across the groups
   if (launch_params.h_k != launch_params.h) {
     at::sum_out(unpad_dk,
@@ -338,19 +346,21 @@ void custom_call_flash_attention_varlen_backward(cudaStream_t stream, void** buf
   }
 
   torch::Tensor repeated_indices_q = indices_q.unsqueeze(1).unsqueeze(1).expand(
-    {indices_q.size(0), params.h, params.d});
+      {indices_q.size(0), params.h, params.d});
   torch::Tensor repeated_indices_k = indices_k.unsqueeze(1).unsqueeze(1).expand(
-    {indices_k.size(0), params.h_k, params.d});
+      {indices_k.size(0), params.h_k, params.d});
 
   dq.scatter_(0, repeated_indices_q, unpad_dq);
   dk.scatter_(0, repeated_indices_k, unpad_dk);
   dv.scatter_(0, repeated_indices_k, unpad_dv);
-  dsoftmax_sum.slice(2, 0, max_seqlen_in_batch_q).copy_(rounded_dsoftmax_sum.slice(2, 0, max_seqlen_in_batch_q));
+  dsoftmax_sum.slice(2, 0, max_seqlen_in_batch_q)
+      .copy_(rounded_dsoftmax_sum.slice(2, 0, max_seqlen_in_batch_q));
 
   cudaEventRecord(xla_wait_torch_event, torch_stream);
   cudaStreamWaitEvent(stream, xla_wait_torch_event);
 }
-XLA_REGISTER_CUSTOM_CALL_TARGET(custom_call_flash_attention_varlen_backward, "CUDA");
+XLA_REGISTER_CUSTOM_CALL_TARGET(custom_call_flash_attention_varlen_backward,
+                                "CUDA");
 
 std::vector<xla::XlaOp> BuildFlashAttentionVarlenBackward(
     const xla::XlaOp& dout, const xla::XlaOp& q, const xla::XlaOp& k,
@@ -381,14 +391,12 @@ FlashAttentionVarlenBackward::FlashAttentionVarlenBackward(
     const torch::lazy::Value& out, const torch::lazy::Value& softmax_lse,
     const torch::lazy::Value& cu_seqlens_q,
     const torch::lazy::Value& cu_seqlens_k, const torch::lazy::Value& rng_state,
-    const FlashAttentionBackwardParams& params,
-    const std::string& params_str)
+    const FlashAttentionBackwardParams& params, const std::string& params_str)
     : XlaNode(xla_flash_attention_backward,
               {dout, q, k, v, out, softmax_lse, cu_seqlens_q, cu_seqlens_k,
                rng_state},
               NodeOutputShape(q, k, v, softmax_lse),
-              /*num_outputs=*/4,
-              torch::lazy::MHash(params_str)),
+              /*num_outputs=*/4, torch::lazy::MHash(params_str)),
       params_(params),
       params_str_(params_str) {}
 
@@ -399,14 +407,12 @@ FlashAttentionVarlenBackward::FlashAttentionVarlenBackward(
     const torch::lazy::Value& cu_seqlens_q,
     const torch::lazy::Value& cu_seqlens_k, const torch::lazy::Value& rng_state,
     const torch::lazy::Value& alibi_slopes,
-    const FlashAttentionBackwardParams& params,
-    const std::string& params_str)
+    const FlashAttentionBackwardParams& params, const std::string& params_str)
     : XlaNode(xla_flash_attention_backward,
               {dout, q, k, v, out, softmax_lse, cu_seqlens_q, cu_seqlens_k,
                rng_state, alibi_slopes},
               NodeOutputShape(q, k, v, softmax_lse),
-              /*num_outputs=*/4,
-              torch::lazy::MHash(params_str)),
+              /*num_outputs=*/4, torch::lazy::MHash(params_str)),
       params_(params),
       params_str_(params_str) {}
 

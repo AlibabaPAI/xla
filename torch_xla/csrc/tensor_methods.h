@@ -116,24 +116,20 @@ void adam_optimizer_step_(const XLATensorPtr& found_inf, XLATensorPtr& step,
 
 std::vector<XLATensorPtr> flash_attention_forward(
     const XLATensorPtr& q, const XLATensorPtr& k, const XLATensorPtr& v,
-    const XLATensorPtr& alibi_slopes,
-    const FlashAttentionForwardParams& params,
+    const XLATensorPtr& alibi_slopes, const FlashAttentionForwardParams& params,
     const std::string& params_str);
 
 std::vector<XLATensorPtr> flash_attention_varlen_forward(
     const XLATensorPtr& q, const XLATensorPtr& k, const XLATensorPtr& v,
-    const XLATensorPtr& attention_mask,
-    const XLATensorPtr& alibi_slopes,
-    const FlashAttentionForwardParams& params,
-    const std::string& params_str);
+    const XLATensorPtr& attention_mask, const XLATensorPtr& alibi_slopes,
+    const FlashAttentionForwardParams& params, const std::string& params_str);
 
 std::vector<XLATensorPtr> flash_attention_backward(
     const XLATensorPtr& dout, const XLATensorPtr& q, const XLATensorPtr& k,
     const XLATensorPtr& v, const XLATensorPtr& out,
     const XLATensorPtr& softmax_lse, const XLATensorPtr& rng_state,
     const XLATensorPtr& alibi_slopes,
-    const FlashAttentionBackwardParams& params,
-    const std::string& params_str);
+    const FlashAttentionBackwardParams& params, const std::string& params_str);
 
 std::vector<XLATensorPtr> flash_attention_varlen_backward(
     const XLATensorPtr& dout, const XLATensorPtr& q, const XLATensorPtr& k,
@@ -141,8 +137,7 @@ std::vector<XLATensorPtr> flash_attention_varlen_backward(
     const XLATensorPtr& softmax_lse, const XLATensorPtr& cu_seqlens_q,
     const XLATensorPtr& cu_seqlens_k, const XLATensorPtr& rng_state,
     const XLATensorPtr& alibi_slopes,
-    const FlashAttentionBackwardParams& params,
-    const std::string& params_str);
+    const FlashAttentionBackwardParams& params, const std::string& params_str);
 
 std::vector<XLATensorPtr> user_computation(
     const std::string& opname, absl::Span<const XLATensorPtr> inputs,

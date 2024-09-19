@@ -86,8 +86,8 @@ struct FlashAttentionBackwardParams : public FlashAttentionForwardParams {
 
 void set_forward_params(
     FlashAttentionForwardParams& params, const size_t b, const size_t seqlen_q,
-    const size_t seqlen_k, const size_t h, const size_t h_k,
-    const size_t d, const size_t d_rounded, const at::Tensor& q, const at::Tensor& k,
+    const size_t seqlen_k, const size_t h, const size_t h_k, const size_t d,
+    const size_t d_rounded, const at::Tensor& q, const at::Tensor& k,
     const at::Tensor& v, void* attention_mask, float p_dropout,
     float softmax_scale, bool is_causal, int window_size_left,
     int window_size_right, int alibi_slopes_batch_stride,
@@ -95,40 +95,39 @@ void set_forward_params(
     bool seqlenq_ngroups_swapped =
         false /*TODO(wenting.swt): support max_seqlen_q==1*/);
 
-void set_backward_params(
-    FlashAttentionBackwardParams& params, const size_t b, const size_t seqlen_q,
-    const size_t seqlen_k, const size_t h, const size_t h_k,
-    const size_t d, const size_t d_rounded, const at::Tensor& q, const at::Tensor& k,
-    const at::Tensor& v, const at::Tensor& dout,
-    float p_dropout, float softmax_scale, bool is_causal, int window_size_left,
-    int window_size_right, bool deterministic, int alibi_slopes_batch_stride,
-    bool enable_alibi_slopes);
+void set_backward_params(FlashAttentionBackwardParams& params, const size_t b,
+                         const size_t seqlen_q, const size_t seqlen_k,
+                         const size_t h, const size_t h_k, const size_t d,
+                         const size_t d_rounded, const at::Tensor& q,
+                         const at::Tensor& k, const at::Tensor& v,
+                         const at::Tensor& dout, float p_dropout,
+                         float softmax_scale, bool is_causal,
+                         int window_size_left, int window_size_right,
+                         bool deterministic, int alibi_slopes_batch_stride,
+                         bool enable_alibi_slopes);
 
 FlashAttentionForwardParams get_flash_attention_forward_params(
     const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
     c10::optional<at::Tensor>& attention_mask,
-    c10::optional<at::Tensor>& alibi_slopes_, const float p_dropout, const float softmax_scale,
-    const bool zero_tensors, const bool is_causal, int window_size_left,
-    int window_size_right, const bool return_softmax);
+    c10::optional<at::Tensor>& alibi_slopes_, const float p_dropout,
+    const float softmax_scale, const bool zero_tensors, const bool is_causal,
+    int window_size_left, int window_size_right, const bool return_softmax);
 
 FlashAttentionBackwardParams get_flash_attention_backward_params(
     const at::Tensor& dout, const at::Tensor& q, const at::Tensor& k,
     const at::Tensor& v, const at::Tensor& out, const at::Tensor& softmax_lse,
-    c10::optional<at::Tensor>& cu_seqlens_q, c10::optional<at::Tensor>& cu_seqlens_k,
-    c10::optional<at::Tensor>& alibi_slopes_, const float p_dropout, const float softmax_scale,
-    const bool zero_tensors, const bool is_causal, int window_size_left,
-    int window_size_right, const bool deterministic);
+    c10::optional<at::Tensor>& cu_seqlens_q,
+    c10::optional<at::Tensor>& cu_seqlens_k,
+    c10::optional<at::Tensor>& alibi_slopes_, const float p_dropout,
+    const float softmax_scale, const bool zero_tensors, const bool is_causal,
+    int window_size_left, int window_size_right, const bool deterministic);
 
-at::Tensor cu_seqlens_to_indices(const at::Tensor& cu_seqlens,
-                                 int batch_size,
-                                 int seqlen,
-                                 torch::Dtype scalar_type,
-                                 int& max_seqlen_in_batch,
-                                 int& total);
+at::Tensor cu_seqlens_to_indices(const at::Tensor& cu_seqlens, int batch_size,
+                                 int seqlen, torch::Dtype scalar_type,
+                                 int& max_seqlen_in_batch, int& total);
 
 at::Tensor mask_to_indices(const at::Tensor& attention_mask,
-                           int& max_seqlen_in_batch,
-                           int& total,
+                           int& max_seqlen_in_batch, int& total,
                            at::Tensor& cu_seqlen);
 
 at::Tensor index_first_axis(const at::Tensor& input, const at::Tensor& indices);
