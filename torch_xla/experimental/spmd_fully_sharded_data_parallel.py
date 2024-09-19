@@ -1,3 +1,4 @@
+# coding=utf-8
 import warnings
 from typing import (Any, Callable, Dict, Optional, Union)
 
@@ -11,8 +12,7 @@ import torch_xla.core.xla_model as xm
 import torch_xla.distributed.spmd as spmd
 from torch_xla.distributed.fsdp._init_utils import _materialize_module
 from torch_xla.distributed.fsdp.wrap import recursive_wrap
-from torch_xla.distributed.fsdp.xla_fully_sharded_data_parallel import (
-    _cast_floats_tensors, apply_to_tensors)
+from torch_xla.distributed.fsdp.xla_fully_sharded_data_parallel import _cast_floats_tensors
 
 FLOAT_DTYPES = [torch.float32, torch.float16, torch.bfloat16]
 
