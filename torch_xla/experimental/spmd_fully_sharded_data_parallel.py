@@ -1,17 +1,19 @@
-from typing import (Any, Callable, Dict, Optional, Union)
 import warnings
+from typing import (Any, Callable, Dict, Optional, Union)
 
+import numpy as np
 import torch
 import torch.nn as nn
 from torch._prims_common import TensorLike, TensorSequenceType
 
-import numpy as np
-
 import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.distributed.spmd as spmd
-from torch_xla.distributed.fsdp.wrap import recursive_wrap
 from torch_xla.distributed.fsdp._init_utils import _materialize_module
+from torch_xla.distributed.fsdp.wrap import recursive_wrap
+from torch_xla.distributed.fsdp.xla_fully_sharded_data_parallel import _cast_floats_tensors
+
+FLOAT_DTYPES = [torch.float32, torch.float16, torch.bfloat16]
 
 
 def _prepare_spmd_partition_spec(param):
@@ -40,6 +42,10 @@ class SpmdFullyShardedDataParallel(nn.Module):
       The callable should have the signature (output, mesh) -> None.
       If None, the default implementation will shard the first tensor in the output.
       If the output is a tuple, only the first tensor will be sharded.
+    compute_dtype (torch.dtype, Optional):
+      dtype for full parameters for computation. This defaults to
+      ``torch.float32`` but can be set to ``torch.float16`` or
+      ``torch.bfloat16``. The sharded parameters will always be in FP32.
   """
 
   def __init__(
@@ -47,6 +53,7 @@ class SpmdFullyShardedDataParallel(nn.Module):
       module: nn.Module,
       mesh: Optional[spmd.Mesh] = None,
       shard_output: Optional[Callable] = None,
+      compute_dtype: Optional[torch.dtype] = None,
       auto_wrap_policy: Optional[Callable] = None,
       auto_wrapper_callable: Optional[Callable] = None,
   ):
@@ -95,6 +102,11 @@ class SpmdFullyShardedDataParallel(nn.Module):
           # `auto_wrapper_callable`` doesn't need to be specified in auto-wrapping
       )
       self._auto_wrap(auto_wrap_kwargs, fsdp_kwargs)
+
+    if compute_dtype is not None and compute_dtype not in FLOAT_DTYPES:
+      raise ValueError(
+          f"compute_dtype must be one of {FLOAT_DTYPES}, not {compute_dtype}")
+    self.compute_dtype = compute_dtype or torch.float32
 
     _materialize_module(
         module,
@@ -150,6 +162,9 @@ class SpmdFullyShardedDataParallel(nn.Module):
     return self._orig_module
 
   def forward(self, *args: Any, **kwargs: Any) -> torch.Tensor:
+    if self.compute_dtype != torch.float32:
+      # Cast the input float tensors to the specified compute_dtype
+      args, kwargs = _cast_floats_tensors(self.compute_dtype, *args, **kwargs)
     output = self.module(*args, **kwargs)
     # Need to shard the output of the forward to instruct the compiler
     # to enforce the FSDP algorithm.
