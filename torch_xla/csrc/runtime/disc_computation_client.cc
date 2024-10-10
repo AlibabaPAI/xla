@@ -17,6 +17,7 @@
 #include "mlir/Pass/Pass.h"            // from @llvm-project
 #include "torch_xla/csrc/runtime/computation_client.h"
 #include "torch_xla/csrc/runtime/disc/disc_compile.h"
+#include "torch_xla/csrc/runtime/env_vars.h"
 #include "torch_xla/csrc/runtime/stablehlo_helper.h"
 #include "torch_xla/csrc/runtime/sys_util.h"
 #include "xla/hlo/ir/hlo_module.h"
@@ -97,6 +98,10 @@ DISCComputationClient::DISCComputationClient() {
   world_size_ = sys_util::GetEnvInt("WORLD_SIZE", 1);
   local_rank_ = sys_util::GetEnvInt("LOCAL_RANK", 0);
   global_rank_ = sys_util::GetEnvInt("RANK", local_rank_);
+  device_type_ = sys_util::GetEnvString(env::kEnvDISCDevice, "CUDA");
+  if (device_type_ != "CUDA") {
+    XLA_ERROR() << "Only CUDA device is supported by DISC backend";
+  }
 }
 
 DISCComputationClient::~DISCComputationClient() {}
@@ -362,7 +367,7 @@ std::map<std::string, Metric> DISCComputationClient::GetMetrics() const {
 }
 
 std::string DISCComputationClient::GetDefaultDevice() const {
-  return absl::StrCat(DefaultDevicePrefix, std::to_string(local_rank_));
+  return absl::StrCat(device_type_, ":", std::to_string(local_rank_));
 }
 
 std::vector<std::string> DISCComputationClient::GetLocalDevices() const {
@@ -390,8 +395,7 @@ std::vector<std::string> DISCComputationClient::GetAllDevices() const {
   std::vector<std::string> all_devices;
   int device_count = world_size_;
   for (int idx = 0; idx < device_count; idx++) {
-    all_devices.push_back(
-        absl::StrCat(DefaultDevicePrefix, std::to_string(idx)));
+    all_devices.push_back(absl::StrCat(device_type_, ":", std::to_string(idx)));
   }
   return all_devices;
 }
