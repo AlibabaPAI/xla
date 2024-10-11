@@ -352,7 +352,7 @@ FlashAttentionForwardParams get_flash_attention_forward_params(
   set_forward_params(
       params, batch_size, max_seqlen_q, max_seqlen_k, seqlen_q_rounded,
       seqlen_k_rounded, num_heads, num_heads_k, head_size, head_size_rounded,
-      total_q, total_k, q, k, v, cu_seqlens_q.data_ptr(), p_dropout,
+      total_q, total_k, q, k, v, nullptr, p_dropout,
       softmax_scale, is_causal, window_size_left, window_size_right,
       alibi_slopes_batch_stride, enable_alibi_slopes, seqlenq_ngroups_swapped);
 
@@ -453,7 +453,7 @@ FlashAttentionBackwardParams get_flash_attention_backward_params(
   set_backward_params(
       params, batch_size, max_seqlen_q, max_seqlen_k, seqlen_q_rounded,
       seqlen_k_rounded, num_heads, num_heads_k, head_size, head_size_rounded,
-      total_q, total_k, q, k, v, dout, cu_seqlens_q.data_ptr(), p_dropout,
+      total_q, total_k, q, k, v, dout, nullptr, p_dropout,
       softmax_scale, is_causal, window_size_left, window_size_right,
       deterministic, alibi_slopes_batch_stride, enable_alibi_slopes);
   return params;
