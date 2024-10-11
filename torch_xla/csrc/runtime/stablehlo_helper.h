@@ -20,6 +20,9 @@ void ConvertStableHloToHlo(mlir::ModuleOp* mlir_module,
                            mlir::MLIRContext* context,
                            xla::HloProto* hlo_proto);
 
+absl::Status ConvertHloToMhlo(const xla::HloModuleProto* proto,
+                              mlir::ModuleOp* mlir_module);
+
 std::string GetHloModuleStr(const xla::HloModuleProto* proto);
 
 const std::string GetTorchDtypeToStablehloDtype(const std::string& dtype);

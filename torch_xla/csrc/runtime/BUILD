@@ -10,12 +10,19 @@ load(
 
 load(
     "//bazel:rules_def.bzl",
+    "ptxla_cc_library",
     "ptxla_cc_test",
+    "if_enable_disc",
 )
 
 licenses(["notice"])  # Apache 2.0
 
 package(default_visibility = ["//visibility:public"])
+
+config_setting(
+    name = "enable_disc",
+    define_values = {"enable_disc": "true"},
+)
 
 cc_library(
   name = "runtime",
@@ -31,7 +38,12 @@ cc_library(
     ":pjrt_computation_client",
     ":ifrt_computation_client",
     "@tsl//tsl/platform:stacktrace",
-  ],
+  ] + if_enable_disc([
+    ":disc_computation_client",
+  ]),
+  copts = if_enable_disc([
+    "-DTORCHACC_ENABLE_DISC",
+  ]),
 )
 
 cc_library(
@@ -134,6 +146,29 @@ cc_library(
     "@com_google_absl//absl/strings",
     "@com_google_absl//absl/synchronization",
     "@com_google_absl//absl/types:span",
+  ],
+)
+
+cc_library(
+  name = "disc_computation_client",
+  srcs = [
+    "disc_computation_client.cc",
+  ],
+  hdrs = [
+    "disc_computation_client.h",
+  ],
+  deps = [
+    ":computation_client",
+    ":stablehlo_helper",
+    "@tsl//tsl/platform:errors",
+    "@tsl//tsl/platform:logging",
+    "@xla//xla:literal",
+    "@xla//xla:shape_util",
+    "@xla//xla/client:xla_computation",
+    "//torch_xla/csrc/runtime/disc:disc_ral",
+    "//torch_xla/csrc/runtime/disc:disc_compile",
+    "@xla//xla/service:float_normalization",
+    "@xla//xla/service/gpu:gpu_float_support",
   ],
 )
 
@@ -515,6 +550,28 @@ ptxla_cc_test(
         "@tsl//tsl/platform:env",
         "@tsl//tsl/platform:errors",
         "@tsl//tsl/platform:logging",
+        "@tsl//tsl/platform:test",
+        "@tsl//tsl/platform:test_main",
+    ],
+)
+
+ptxla_cc_test(
+    name = "disc_computation_client_test",
+    srcs = ["disc_computation_client_test.cc"],
+    deps = [
+        ":disc_computation_client",
+        "@xla//xla:literal",
+        "@xla//xla:literal_util",
+        "@xla//xla:shape_util",
+        "@xla//xla:status",
+        "@xla//xla:statusor",
+        "@xla//xla/client:xla_builder",
+        "@xla//xla/client:xla_computation",
+        "@xla//xla/tests:literal_test_util",
+        "@xla//xla/tools:hlo_module_loader",
+        "@stablehlo//:register",
+        "@tsl//tsl/lib/core:status_test_util",
+        "@tsl//tsl/platform:env",
         "@tsl//tsl/platform:test",
         "@tsl//tsl/platform:test_main",
     ],

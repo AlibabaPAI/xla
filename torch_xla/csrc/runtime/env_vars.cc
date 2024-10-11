@@ -9,6 +9,7 @@ const char* const kEnvNumGpu = "GPU_NUM_DEVICES";
 const char* const kEnvNumCpu = "CPU_NUM_DEVICES";
 const char* const kEnvTpuvmMode = "TPUVM_MODE";
 const char* const kEnvPjRtDevice = "PJRT_DEVICE";
+const char* const kEnvDISCDevice = "DISC_DEVICE";
 const char* const kEnvPjRtTpuMaxInflightComputations =
     "PJRT_TPU_MAX_INFLIGHT_COMPUTATIONS";
 const char* const kEnvPjrtAsyncCpuClient = "PJRT_CPU_ASYNC_CLIENT";

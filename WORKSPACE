@@ -89,3 +89,10 @@ new_local_repository(
     build_file = "//bazel:flash_attn.BUILD",
     path = "third_party/flash-attention/",
 )
+################################ BladeDISC Setup ################################
+
+new_local_repository(
+    name = "disc_compiler",
+    build_file = "//bazel:disc.BUILD",
+    path = "third_party/BladeDISC/",
+)

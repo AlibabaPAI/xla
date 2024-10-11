@@ -56,6 +56,10 @@ cc_import(
 )
 
 cc_import(
+    name = "libtorch_cuda",
+    shared_library = "build/lib/libtorch_cuda.so",
+)
+cc_import(
     name = "libtorch_python",
     shared_library = "build/lib/libtorch_python.so",
 )
@@ -63,4 +67,8 @@ cc_import(
 cc_import(
     name = "libc10",
     shared_library = "build/lib/libc10.so",
+)
+cc_import(
+    name = "libc10_cuda",
+    shared_library = "build/lib/libc10_cuda.so",
 )

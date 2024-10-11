@@ -3,6 +3,11 @@ load(
     "if_cuda_is_configured",
 )
 
+load(
+    "//bazel:rules_def.bzl",
+    "if_enable_disc",
+)
+
 cc_binary(
     name = "_XLAC.so",
     copts = [
@@ -28,5 +33,7 @@ cc_binary(
         "@torch//:libtorch_python",
     ] + if_cuda_is_configured([
         "@xla//xla/stream_executor:cuda_platform",
+    ]) + if_enable_disc([
+        "//torch_xla/csrc/runtime/disc:disc_ral",
     ]),
 )

@@ -231,6 +231,9 @@ class BuildBazelExtension(build_ext.build_ext):
 
     bazel_argv.extend(build_util.bazel_options_from_env())
 
+    if not build_util.check_env_flag('ENABLE_DISC', 'false'):
+      bazel_argv.append('--define=enable_disc=false')
+
     self.spawn(bazel_argv)
 
     ext_bazel_bin_path = os.path.join(self.build_temp, 'bazel-bin', ext.relpath,
@@ -244,9 +247,24 @@ class BuildBazelExtension(build_ext.build_ext):
 
     # copy flash attention cuda so file
     flash_attn_so_name = 'flash_attn_cuda.so'
-    shutil.copyfile(
-        '/'.join(['third_party/flash-attention', flash_attn_so_name]),
-        '/'.join([ext_dest_dir, flash_attn_so_name]))
+    bazel_bin_path = 'build/temp.linux-x86_64-cpython-310/bazel-bin/external/flash_attn/'
+    shutil.copyfile('/'.join([bazel_bin_path, flash_attn_so_name]),
+                    '/'.join([ext_dest_dir, flash_attn_so_name]))
+
+    # package BladeDISC distribution files
+    # please note, TorchBlade also create some symbolic links to 'torch_blade' dir
+    if build_util.check_env_flag('ENABLE_DISC', 'false'):
+      disc_ral_so_name = 'libral_base_context.so'
+      bazel_bin_path = 'build/temp.linux-x86_64-cpython-310/bazel-bin/external/disc_compiler'
+      shutil.copyfile(
+          os.path.join(bazel_bin_path, disc_ral_so_name),
+          '/'.join([ext_dest_dir, disc_ral_so_name]))
+
+      disc_customop_so_name = 'libdisc_custom_ops.so'
+      bazel_bin_path = 'build/temp.linux-x86_64-cpython-310/bazel-bin/external/disc_compiler'
+      shutil.copyfile(
+          os.path.join(bazel_bin_path, disc_customop_so_name),
+          '/'.join([ext_dest_dir, disc_customop_so_name]))
 
 
 class Develop(develop.develop):
