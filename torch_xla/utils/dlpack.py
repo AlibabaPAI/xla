@@ -15,7 +15,8 @@ def from_dlpack(ext_tensor: Any):
       ext_tensor, '__dlpack__'):
     device_type, device_id = ext_tensor.__dlpack_device__()
     if device_type == DLDeviceType.kDLGPU:
-      stream = torch_xla._XLAC._get_stream_for_cuda_device(device_id)
+      # stream = torch_xla._XLAC._get_stream_for_cuda_device(device_id)
+      stream = None
       dlpack = ext_tensor.__dlpack__(stream=stream)
     else:
       dlpack = ext_tensor.__dlpack__()
@@ -37,16 +38,16 @@ def from_xla_cuda_to_cuda(tensor):
   # https://github.com/pytorch/pytorch/blob/b0ef363972203b163cddc95e4c6054b8221c2300/torch/utils/dlpack.py#L114-L115
   # The array API specify that the default legacy stream must be passed
   # with a value of 1 for CUDA
-  device_id = tensor.device.index
-  stream = torch_xla._XLAC._get_stream_for_cuda_device(device_id)
-  stream = 1 if stream == 0 else stream
-  assert stream is None or type(stream) is int
-  external_stream = torch.cuda.ExternalStream(stream)
-  current_stream = torch.cuda.current_stream()
-  if external_stream != current_stream:
-    event = torch.cuda.Event()
-    event.record(current_stream)
-    external_stream.wait_event(event)
+  # device_id = tensor.device.index
+  # stream = torch_xla._XLAC._get_stream_for_cuda_device(device_id)
+  # stream = 1 if stream == 0 else stream
+  # assert stream is None or type(stream) is int
+  # external_stream = torch.cuda.ExternalStream(stream)
+  # current_stream = torch.cuda.current_stream()
+  # if external_stream != current_stream:
+  #   event = torch.cuda.Event()
+  #   event.record(current_stream)
+  #   external_stream.wait_event(event)
   dlpack = to_dlpack(tensor)
   cuda_tensor = torch.utils.dlpack.from_dlpack(dlpack)
   return cuda_tensor

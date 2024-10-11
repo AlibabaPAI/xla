@@ -149,6 +149,9 @@ def _maybe_move_tensors_to_device(tensors: tuple,
                                   target_device: torch.device) -> tuple:
   assert target_device, "Moving tensors to None device not supported"
 
+  already_mark_step = False
+  device_id = None
+
   moved_tensors = []
   for tensor in tensors:
     if not isinstance(tensor, torch.Tensor):
@@ -165,10 +168,14 @@ def _maybe_move_tensors_to_device(tensors: tuple,
     zero_copy_enabled = xu.getenv_as(xenv.ZERO_COPY_ENABLED, bool, defval=False)
     if zero_copy_enabled and tensor.device.type == 'cuda' and target_device.type == 'xla':
       # If the input cuda tensor requires gradient, we need to call detach. Otherwise, we'd get the error "RuntimeError: Can't export tensors that require gradient, use tensor.detach()"
+      device_type, device_id = tensor.__dlpack_device__()
       moved_tensor = torch_xla_dlpack.from_dlpack(tensor.detach())
     elif zero_copy_enabled and tensor.device.type == 'xla' and target_device.type == 'cuda':
       # mark_step is need to make sure the pjrt buffer is valid.
-      xm.mark_step()
+      if not already_mark_step:
+        xm.mark_step()
+        already_mark_step = True
+      device_id = tensor.device.index
       moved_tensor = torch_xla_dlpack.from_xla_cuda_to_cuda(tensor)
     else:
       # Have to move to CPU before moving it to target device.
@@ -180,6 +187,20 @@ def _maybe_move_tensors_to_device(tensors: tuple,
     # with torch.to(..)
     moved_tensor.requires_grad = tensor.requires_grad
     moved_tensors.append(moved_tensor)
+
+  if zero_copy_enabled and device_id is not None:
+    # device_id = tensor.device.index
+    # print(f"device_id: {device_id}")
+    device_id = 0
+    stream = torch_xla._XLAC._get_stream_for_cuda_device(device_id)
+    stream = 1 if stream == 0 else stream
+    assert stream is None or type(stream) is int
+    external_stream = torch.cuda.ExternalStream(stream)
+    current_stream = torch.cuda.current_stream()
+    if external_stream != current_stream:
+      event = torch.cuda.Event()
+      event.record(current_stream)
+      external_stream.wait_event(event)
 
   return tuple(moved_tensors)
 
@@ -536,6 +557,14 @@ def extract_internal(xla_model: torch.fx.GraphModule):
     nonlocal skip_checking_input_sharding_threashold
     nonlocal sym_constants_to_graph_vars
 
+    original_device: torch.device = _get_input_arg_device(args)
+    is_cuda_args: bool = False
+    if original_device:
+      is_cuda_args = original_device.type == "cuda"
+
+    if is_cuda_args:
+      args = _maybe_move_tensors_to_device(args, xm.xla_device())
+
     # See [Note: Dynamo real-time input-shape cache look-up] above.
     xla_args_tensor_only, sym_constants = _split_xla_args_tensor_sym_constant(
         args)
@@ -550,14 +579,6 @@ def extract_internal(xla_model: torch.fx.GraphModule):
        arg_index_to_need_update_index, none_remover, graph_input_matcher,
        special_return_handler, xla_args_need_update) = extract_graph_helper(
            xla_model, sym_constants_to_graph_vars)
-
-    original_device: torch.device = _get_input_arg_device(args)
-    is_cuda_args: bool = False
-    if original_device:
-      is_cuda_args = original_device.type == "cuda"
-
-    if is_cuda_args:
-      args = _maybe_move_tensors_to_device(args, xm.xla_device())
 
     if not config.skip_input_data_check:
       # mark_step needs to be blocking since we want to access args's XLADatas
@@ -715,12 +736,31 @@ class XLAConstructorMoverPass(ConstructorMoverPass):
     device = node.kwargs.get("device")
     return (device is not None and device.type == self.target)
 
+  def move_cuda_to_xla(self, graph: torch.fx.Graph):
+    constructors = []
+    for node in graph.nodes:
+      # print(f'node.kwargs: {node.kwargs.get("device")} {node.kwargs.get("device") == torch.device("cuda")}')
+      device = node.kwargs.get("device")
+      if device is None or device.type != "cuda":
+        continue
+
+      constructors.append(node)
+
+    for node in constructors:
+      kwargs = node.kwargs.copy()
+      kwargs["device"] = self.target
+      node.kwargs = kwargs
+    
+  def __call__(self, graph: torch.fx.Graph) -> None:
+    self.move_cuda_to_xla(graph)
+    super().__call__(graph)
+
 
 def extract_compiled_graph(xla_model: torch.fx.GraphModule, xla_args):
   torch_xla._XLAC._xla_increment_counter('DynamoExtractCompiledGraph', 1)
 
-  with torch_xla.experimental.eager_mode_context(False):
-    return extract_compiled_graph_helper(xla_model, xla_args)
+  # with torch_xla.experimental.eager_mode_context(False):
+  return extract_compiled_graph_helper(xla_model, xla_args)
 
 
 def _clear_pending_irs_on_args(args_tensor_only, cloned_args):
