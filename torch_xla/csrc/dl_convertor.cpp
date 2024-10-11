@@ -138,9 +138,7 @@ DLManagedTensor* toDLPack(const at::Tensor& input) {
     auto external_ref = pjrt_buffer->AcquireExternalReference();
     XLA_CHECK_OK(external_ref.status());
     pack->external_reference = std::move(external_ref.value());
-    xla::PjRtFuture<> future = pjrt_buffer->GetReadyFuture();
-    absl::Status status = future.Await();
-    XLA_CHECK_OK(status);
+    XLA_CHECK_OK(pjrt_buffer->GetReadyFuture().Await());
   }
   pack->buffer_reference = pjrt_buffer;
 
