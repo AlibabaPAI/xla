@@ -1,5 +1,7 @@
 #include "torch_xla/csrc/stack_frame_index_builder.h"
 
+#include "absl/strings/str_join.h"
+
 namespace torch_xla {
 
 // Invalid stack frame id - used for stack frame population
@@ -21,17 +23,23 @@ void StackFrameIndexBuilder::AddStackFrameLocations(
     auto frame_it = frame_info.rbegin();
     int parent_frame_id = kInvalidIndex;
     int depth = 0;
+
+    std::vector<std::string> source_files;
     for (; frame_it != frame_info.rend() && depth < max_stack_depth;
          ++frame_it) {
       parent_frame_id = AddStackFrameLocation(*frame_it, parent_frame_id);
       ++depth;
+      source_files.emplace_back(frame_it->function + "@" +
+                                frame_it->file.substr(depth) + ":" +
+                                std::to_string(frame_it->line));
     }
 
     // Point to first entry / deepest call / top frame in call stack
     --frame_it;
-
-    metadata_to_populate.set_source_file(frame_it->file);
-    metadata_to_populate.set_source_line(frame_it->line);
+    metadata_to_populate.set_source_file(absl::StrJoin(source_files, "|"));
+    metadata_to_populate.set_source_line(0);
+    // metadata_to_populate.set_source_file(frame_it->file);
+    // metadata_to_populate.set_source_line(frame_it->line);
     metadata_to_populate.set_stack_frame_id(parent_frame_id);
   }
 }

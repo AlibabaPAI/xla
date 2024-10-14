@@ -23,6 +23,12 @@ namespace torch_xla {
 
 namespace {
 
+static bool IsVerboseXlaOpMetadataStackEnabled() {
+  static bool op_metadata_verbose_stack =
+      runtime::sys_util::GetEnvBool("XLA_HLO_DEBUG_VERBOSE_STACK", false);
+  return op_metadata_verbose_stack;
+}
+
 class HloMetadataSetter {
  public:
   HloMetadataSetter(LoweringContext* loctx, const torch::lazy::Node* node) {
