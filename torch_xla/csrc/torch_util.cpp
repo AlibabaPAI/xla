@@ -6,6 +6,7 @@
 #include "torch_xla/csrc/runtime/debug_macros.h"
 #include "torch_xla/csrc/runtime/xla_util.h"
 #include "torch_xla/csrc/tensor.h"
+#include "torch_xla/csrc/xla_graph_executor.h"
 
 namespace torch_xla {
 
@@ -71,6 +72,31 @@ at::Tensor MaybeWrapTensorToFunctional(const at::Tensor& tensor) {
     return tensor;
   }
   return at::functionalization::impl::to_functional_tensor(tensor);
+}
+
+torch::lazy::Value GetSymIntValue(const c10::SymInt& size,
+                                  const torch::lazy::BackendDevice& device) {
+  if (auto s = size.maybe_as_int()) {
+    // return ScalarOp(at::Scalar(*s), GetShapeDimensionType(&device));
+    return XLAGraphExecutor::Get()->GetIrValueForScalar(
+        at::Scalar(*s), GetShapeDimensionType(&device), device);
+  }
+  auto* lazySymNode =
+      dynamic_cast<XLASymNodeImpl*>(size.toSymNodeImplUnowned());
+  torch::lazy::NodePtr size_node = lazySymNode->node();
+  return torch::lazy::Value(size_node, 0);
+}
+
+int64_t GetSymIntUpperBound(const c10::SymInt& size) {
+  if (auto s = size.maybe_as_int()) {
+    return *s;
+  }
+  auto* lazySymNode =
+      dynamic_cast<XLASymNodeImpl*>(size.toSymNodeImplUnowned());
+  torch::lazy::NodePtr size_node = lazySymNode->node();
+  std::shared_ptr<torch::lazy::DimensionNode> dimension_node =
+      std::dynamic_pointer_cast<torch::lazy::DimensionNode>(size_node);
+  return dimension_node->getStaticValue();
 }
 
 }  // namespace torch_xla
