@@ -257,19 +257,15 @@ class BuildBazelExtension(build_ext.build_ext):
         shutil.copy2(src[0], dest)
 
     # copy flash attention cuda so file
-    copyfiles(
-        'build/*/bazel-bin/external/flash_attn/',
-        ['flash_attn_cuda.so'])
+    copyfiles('build/*/bazel-bin/external/flash_attn/', ['flash_attn_cuda.so'])
 
     # package BladeDISC distribution files
     # please note, TorchBlade also create some symbolic links to 'torch_blade' dir
     if build_util.check_env_flag('ENABLE_DISC', 'false'):
-      copyfiles(
-          'build/*/bazel-bin/external/disc_compiler',
-          [
-              'libral_base_context.so', 'libdisc_custom_ops.so',
-              'disc_compiler_main', 'torch-mlir-opt'
-          ])
+      copyfiles('build/*/bazel-bin/external/disc_compiler', [
+          'libral_base_context.so', 'libdisc_custom_ops.so',
+          'disc_compiler_main', 'torch-mlir-opt'
+      ])
 
 
 class Develop(develop.develop):
