@@ -21,10 +21,11 @@ cc_import(
 
 genrule(
     name = "build_flash_attn",
-    srcs = ["setup.py"],
+    srcs = glob(["third_party/flash-attention/**"]),
     outs = ["flash_attn_cuda.so"],
-    cmd = ';'.join(['pushd third_party/flash-attention/',
-                    'MAX_JOBS=50 FLASH_ATTENTION_FORCE_BUILD=TRUE python setup.py bdist_wheel 2>&1 | tee build.log',
+    cmd = '&&'.join(['pushd external/flash_attn/',
+                    'MAX_JOBS=50 FLASH_ATTENTION_FORCE_BUILD=TRUE python setup.py bdist_wheel',
                     'popd',
-                    'cp third_party/flash-attention/build/*/*.so $(location flash_attn_cuda.so)']),
+                    'cp external/flash_attn/build/*/*.so $(OUTS)']),
+    visibility = ["//visibility:public"],
 )

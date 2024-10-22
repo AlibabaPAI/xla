@@ -31,3 +31,8 @@ bazel-*
 
 # Clangd cache directory
 .cache/*
+
+
+# DISC outputs
+disc_compiler_main
+torch-mlir-opt
