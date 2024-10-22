@@ -41,7 +41,7 @@ genrule(
     cmd = '&&'.join(['export PATH=/root/bin:/usr/local/cuda/bin:$${PATH}',
                     'pushd external/disc_compiler/pytorch_blade/',
                     'python ../scripts/python/common_setup.py',
-                    'TF_CUDA_COMPUTE_CAPABILITIES="7.0,8.0,8.6,9.0" TORCH_CUDA_ARCH_LIST="7.0 8.0 8.6 9.0" python setup.py bdist_wheel',
+                    'LD_LIBRARY_PATH=/usr/local/cuda-12.1/compat/ TF_CUDA_COMPUTE_CAPABILITIES="7.0,8.0,8.6,9.0" TORCH_CUDA_ARCH_LIST="7.0 8.0 8.6 9.0" python setup.py bdist_wheel',
                     'popd',
                     'cp third_party/BladeDISC/pytorch_blade/bazel-bin/external/org_disc_compiler/mlir/ral/libral_base_context.so $(location libral_base_context.so)',
                     'cp third_party/BladeDISC/pytorch_blade/bazel-bin/external/org_disc_compiler/mlir/custom_ops/libdisc_custom_ops.so $(location libdisc_custom_ops.so)',
