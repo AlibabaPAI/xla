@@ -253,7 +253,7 @@ class BuildBazelExtension(build_ext.build_ext):
       for file_name in file_name_list:
         src = glob.glob(os.path.join(bazel_bin_path, file_name))
         assert len(src) == 1
-        dest = '/'.join([ext_dest_dir, file_name])
+        dest = os.path.join(ext_dest_dir, file_name)
         shutil.copy2(src[0], dest)
 
     # copy flash attention cuda so file
