@@ -35,7 +35,7 @@ cc_import(
 
 genrule(
     name = "build_disc",
-    srcs = glob(["third_party/BladeDISC/**"]),
+    srcs = glob(["**"]),
     outs = ["libral_base_context.so", "libdisc_custom_ops.so", "disc_compiler_main", "torch-mlir-opt"],
     local = True,
     cmd = '&&'.join(['export PATH=/root/bin:/usr/local/cuda/bin:$${PATH}',
