@@ -149,7 +149,6 @@ def _maybe_move_tensors_to_device(tensors: tuple,
                                   target_device: torch.device) -> tuple:
   assert target_device, "Moving tensors to None device not supported"
 
-  already_mark_step = False
   device_id = None
 
   moved_tensors = []
@@ -171,12 +170,10 @@ def _maybe_move_tensors_to_device(tensors: tuple,
       device_type, device_id = tensor.__dlpack_device__()
       moved_tensor = torch_xla_dlpack.from_dlpack(tensor.detach())
     elif zero_copy_enabled and tensor.device.type == 'xla' and target_device.type == 'cuda':
-      # mark_step is need to make sure the pjrt buffer is valid.
-      if not already_mark_step:
-        xm.mark_step()
-        already_mark_step = True
-      device_id = tensor.device.index
       moved_tensor = torch_xla_dlpack.from_xla_cuda_to_cuda(tensor)
+      # HACK: The `torch_xla._XLAC._get_stream_for_cuda_device` requires a local device index, while the device index for xla tensors is always 0. 
+      # Meanwhile, dlpack uses the actual device index, so we use the device index of the converted CUDA tensor.
+      device_id = moved_tensor.device.index
     else:
       # Have to move to CPU before moving it to target device.
       cpu_device: torch.device = torch.device("cpu")
@@ -189,9 +186,6 @@ def _maybe_move_tensors_to_device(tensors: tuple,
     moved_tensors.append(moved_tensor)
 
   if zero_copy_enabled and device_id is not None:
-    # device_id = tensor.device.index
-    # print(f"device_id: {device_id}")
-    device_id = 0
     stream = torch_xla._XLAC._get_stream_for_cuda_device(device_id)
     stream = 1 if stream == 0 else stream
     assert stream is None or type(stream) is int
@@ -274,17 +268,15 @@ class SpecialReturnHandler:
 
   def __init__(self, trace_inputs, trace_outputs,
                trace_inputs_inplace_update_bool, constant_outputs_and_indexes):
-    self.trace_inputs = trace_inputs
-    self.trace_outputs = trace_outputs
     self.constant_outputs_and_indexes = constant_outputs_and_indexes
 
     # dedup the traced outputs first
     self.deduper = Deduper()
-    self.deduped_trace_outputs = self.deduper.dedup(self.trace_outputs)
+    self.deduped_trace_outputs = self.deduper.dedup(trace_outputs)
 
     # record the output that is also a input
     trace_inputs_id2pos = {
-        id(x): pos for pos, x in enumerate(self.trace_inputs)
+        id(x): pos for pos, x in enumerate(trace_inputs)
     }
     self.trace_outputs_pos_to_inputs_pos = []
     for out_pos, out in enumerate(self.deduped_trace_outputs):
@@ -511,7 +503,7 @@ def extract_graph_helper(xla_model: torch.fx.GraphModule,
   # mistakenlly update the input tensors.
   torch_xla._XLAC._clear_pending_irs(str(xm.xla_device()))
 
-  vars_to_return = (xla_args_sharding_spec, args_and_out, graph_hash,
+  vars_to_return = (xla_args_sharding_spec, len(args_and_out), graph_hash,
                     arg_index_to_need_update_index, none_remover,
                     graph_input_matcher, special_return_handler,
                     xla_args_need_update)
@@ -544,7 +536,7 @@ def extract_internal(xla_model: torch.fx.GraphModule):
   sym_constants_to_graph_vars: Dict[Tuple[Union[int, float], ...],
                                     Tuple[Any, ...]] = {}
 
-  (xla_args_sharding_spec, args_and_out, graph_hash,
+  (xla_args_sharding_spec, len_args_and_out, graph_hash,
    arg_index_to_need_update_index, none_remover, graph_input_matcher,
    special_return_handler,
    xla_args_need_update) = extract_graph_helper(xla_model,
@@ -569,16 +561,18 @@ def extract_internal(xla_model: torch.fx.GraphModule):
     xla_args_tensor_only, sym_constants = _split_xla_args_tensor_sym_constant(
         args)
     if sym_constants in sym_constants_to_graph_vars:
-      (xla_args_sharding_spec, args_and_out, graph_hash,
+      (xla_args_sharding_spec, len_args_and_out, graph_hash,
        arg_index_to_need_update_index, none_remover, graph_input_matcher,
        special_return_handler,
        xla_args_need_update) = sym_constants_to_graph_vars[sym_constants]
     else:
       xla_model.xla_args = args
-      (xla_args_sharding_spec, args_and_out, graph_hash,
+      (xla_args_sharding_spec, len_args_and_out, graph_hash,
        arg_index_to_need_update_index, none_remover, graph_input_matcher,
        special_return_handler, xla_args_need_update) = extract_graph_helper(
            xla_model, sym_constants_to_graph_vars)
+    if hasattr(xla_model, 'xla_args'):
+      delattr(xla_model, 'xla_args')
 
     if not config.skip_input_data_check:
       # mark_step needs to be blocking since we want to access args's XLADatas
@@ -614,15 +608,16 @@ def extract_internal(xla_model: torch.fx.GraphModule):
         else:
           skip_checking_input_sharding_threashold -= 1
 
-    if len(args_and_out) == 0:
+    if len_args_and_out == 0:
       return ()
 
     # graph input should be tensor only
     graph_input = graph_input_matcher(xla_args_tensor_only)
     res = torch_xla._XLAC._run_cached_graph(graph_hash, graph_input)
+    xm.wait_device_ops()
     res = special_return_handler.addDumbReturn(xla_args_tensor_only, res)
 
-    assert len(res) == len(args_and_out), f"{len(res)} v.s. {len(args_and_out)}"
+    assert len(res) == len_args_and_out, f"{len(res)} v.s. {len_args_and_out}"
     ncopy = 0
 
     for arg_index, res_index in arg_index_to_need_update_index.items():
@@ -639,6 +634,11 @@ def extract_internal(xla_model: torch.fx.GraphModule):
       return result[0]
     else:
       return result
+
+  if hasattr(xla_model, 'xla_args'):
+    delattr(xla_model, 'xla_args')
+
+  torch_xla._XLAC._clear_pending_irs(str(xm.xla_device()))
 
   if dynamo_debug:
     print(
