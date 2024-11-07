@@ -52,6 +52,7 @@ import posixpath
 import contextlib
 import distutils.ccompiler
 import distutils.command.clean
+import glob
 import os
 import requests
 import shutil
@@ -245,26 +246,26 @@ class BuildBazelExtension(build_ext.build_ext):
     os.system(f"patchelf --add-rpath '$ORIGIN/' {ext_bazel_bin_path}")
     shutil.copyfile(ext_bazel_bin_path, ext_dest_path)
 
+    def copyfiles(bazel_bin_path, file_name_list):
+      if not isinstance(file_name_list, list):
+        file_name_list = [file_name_list]
+
+      for file_name in file_name_list:
+        src = glob.glob(os.path.join(bazel_bin_path, file_name))
+        assert len(src) == 1
+        dest = os.path.join(ext_dest_dir, file_name)
+        shutil.copy2(src[0], dest)
+
     # copy flash attention cuda so file
-    flash_attn_so_name = 'flash_attn_cuda.so'
-    bazel_bin_path = 'build/temp.linux-x86_64-cpython-310/bazel-bin/external/flash_attn/'
-    shutil.copyfile('/'.join([bazel_bin_path, flash_attn_so_name]),
-                    '/'.join([ext_dest_dir, flash_attn_so_name]))
+    copyfiles('build/*/bazel-bin/external/flash_attn/', ['flash_attn_cuda.so'])
 
     # package BladeDISC distribution files
     # please note, TorchBlade also create some symbolic links to 'torch_blade' dir
     if build_util.check_env_flag('ENABLE_DISC', 'false'):
-      disc_ral_so_name = 'libral_base_context.so'
-      bazel_bin_path = 'build/temp.linux-x86_64-cpython-310/bazel-bin/external/disc_compiler'
-      shutil.copyfile(
-          os.path.join(bazel_bin_path, disc_ral_so_name),
-          '/'.join([ext_dest_dir, disc_ral_so_name]))
-
-      disc_customop_so_name = 'libdisc_custom_ops.so'
-      bazel_bin_path = 'build/temp.linux-x86_64-cpython-310/bazel-bin/external/disc_compiler'
-      shutil.copyfile(
-          os.path.join(bazel_bin_path, disc_customop_so_name),
-          '/'.join([ext_dest_dir, disc_customop_so_name]))
+      copyfiles('build/*/bazel-bin/external/disc_compiler', [
+          'libral_base_context.so', 'libdisc_custom_ops.so',
+          'disc_compiler_main', 'torch-mlir-opt'
+      ])
 
 
 class Develop(develop.develop):

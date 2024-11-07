@@ -21,10 +21,18 @@ cc_import(
 
 genrule(
     name = "build_flash_attn",
-    srcs = ["setup.py"],
+    srcs = glob(
+        ["**"],
+        exclude=[
+            "dist/**",  # Python whls
+            "build/**",  # Compiled intermediate files
+            "flash_attn.egg-info/**",  # Metadata about the whl package
+            ".*",  # Mainly .git* files
+            ]),
     outs = ["flash_attn_cuda.so"],
-    cmd = ';'.join(['pushd third_party/flash-attention/',
-                    'MAX_JOBS=50 FLASH_ATTENTION_FORCE_BUILD=TRUE python setup.py bdist_wheel 2>&1 | tee build.log',
-                    'popd',
-                    'cp third_party/flash-attention/build/*/*.so $(location flash_attn_cuda.so)']),
+    cmd = "&&".join(["pushd external/flash_attn/",
+                     "MAX_JOBS=50 FLASH_ATTENTION_FORCE_BUILD=TRUE python setup.py bdist_wheel",
+                     "popd",
+                     "cp external/flash_attn/build/*/*.so $(location flash_attn_cuda.so)"]),
+    visibility = ["//visibility:public"],
 )
