@@ -61,9 +61,6 @@ class DISCComputationClient : public ComputationClient {
 
   ComputationClient::ComputationPtr DeserializeComputation(
       const std::string& serialized) override;
-  //{
-  //  XLA_ERROR() << __FUNCTION__ << " not implemented";
-  //}
   torch::lazy::hash_t HashCompilationEnv() override {
     // TODO(wangang.wa): Improve this function.
     return torch::lazy::hash_t();

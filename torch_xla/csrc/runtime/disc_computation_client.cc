@@ -444,10 +444,7 @@ ComputationClient::ComputationPtr DISCComputationClient::DeserializeComputation(
   xla::HloModuleProto hlo_proto;
   disc::DISCCompileResult result_proto;
   hlo_proto.ParseFromString(parts[0]);
-  XLA_VLOG(0) << "DeserializeComputation: " << hlo_proto.DebugString() << "\n";
   result_proto.ParseFromString(parts[1]);
-  XLA_VLOG(0) << "DeserializeComputation: " << result_proto.DebugString()
-              << "\n";
 
   disc::DISCComplationResult compile_result;
   compile_result.ral_lib = result_proto.ral_library();
