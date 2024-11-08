@@ -4,6 +4,7 @@
 
 #include <filesystem>
 
+#include "torch_xla/csrc/runtime/disc/compile_result.pb.h"
 #include "torch_xla/csrc/runtime/env_vars.h"
 #include "torch_xla/csrc/runtime/sys_util.h"
 #include "torch_xla/csrc/runtime/tf_logging.h"
@@ -98,7 +99,14 @@ DISCComplationResult Compile(mlir::ModuleOp &module,
   res.ral_mate_pb = ReadFileBytes(absl::StrCat(output_fname, ".pbtxt"));
   res.inputs = inputs;
   res.outputs = outputs;
-
+  DISCCompileResult result;
+  result.set_ral_library(output_fname);
+  result.set_ral_meta_pb(absl::StrCat(output_fname, ".pbtxt"));
+  for (const auto &input : inputs) {
+    auto data_meta = result.add_input_specs();
+    data_meta->set_device(input.device);
+    data_meta->set_dtype(static_cast<int>(input.scalar_type));
+  }
   return res;
 }
 
