@@ -17,8 +17,7 @@ class FlashAttentionVarlenBackward : public XlaNode {
                                const torch::lazy::Value& cu_seqlens_q,
                                const torch::lazy::Value& cu_seqlens_k,
                                const torch::lazy::Value& rng_state,
-                               const FlashAttentionBackwardParams& params,
-                               const std::string& params_str);
+                               const std::string params);
 
   FlashAttentionVarlenBackward(const torch::lazy::Value& dout,
                                const torch::lazy::Value& q,
@@ -30,16 +29,14 @@ class FlashAttentionVarlenBackward : public XlaNode {
                                const torch::lazy::Value& cu_seqlens_k,
                                const torch::lazy::Value& rng_state,
                                const torch::lazy::Value& alibi_slopes,
-                               const FlashAttentionBackwardParams& params,
-                               const std::string& params_str);
+                               const std::string params);
 
   torch::lazy::NodePtr Clone(torch::lazy::OpList operands) const override;
 
   XlaOpVector Lower(LoweringContext* loctx) const override;
 
  private:
-  FlashAttentionBackwardParams params_;
-  const std::string params_str_;
+  const std::string params_;
 };
 
 }  // namespace torch_xla

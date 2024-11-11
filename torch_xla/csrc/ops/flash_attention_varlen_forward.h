@@ -12,24 +12,21 @@ class FlashAttentionVarlenForward : public XlaNode {
                               const torch::lazy::Value& k,
                               const torch::lazy::Value& v,
                               const torch::lazy::Value& attention_mask,
-                              const FlashAttentionForwardParams& params,
-                              const std::string& params_str);
+                              const std::string params);
 
   FlashAttentionVarlenForward(const torch::lazy::Value& q,
                               const torch::lazy::Value& k,
                               const torch::lazy::Value& v,
                               const torch::lazy::Value& attention_mask,
                               const torch::lazy::Value& alibi_slopes,
-                              const FlashAttentionForwardParams& params,
-                              const std::string& params_str);
+                              const std::string params);
 
   torch::lazy::NodePtr Clone(torch::lazy::OpList operands) const override;
 
   XlaOpVector Lower(LoweringContext* loctx) const override;
 
  private:
-  FlashAttentionForwardParams params_;
-  const std::string params_str_;
+  const std::string params_;
 };
 
 }  // namespace torch_xla

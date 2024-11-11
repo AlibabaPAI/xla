@@ -17,15 +17,15 @@
 namespace torch_xla {
 namespace {
 
-xla::Shape NodeOutputShape(int batch_size, int num_heads, int seqlen_q,
-                           const torch::lazy::Value& q) {
+xla::Shape NodeOutputShape(const torch::lazy::Value& q) {
+  auto q_shape = xla::SpanToVector(GetXlaShape(q).dimensions());
   xla::Shape softmax_lse_shape = xla::ShapeUtil::MakeShape(
       xla::PrimitiveType::F32,
-      {batch_size, num_heads, seqlen_q});  // seqlen_q: padding
+      {q_shape[0], q_shape[2], q_shape[1]});  // batch_size, num_heads, seqlen_q(padding)
   xla::Shape rng_state_shape =
       xla::ShapeUtil::MakeShape(xla::PrimitiveType::U64, {2});
   xla::Shape cu_seqlens_shape =
-      xla::ShapeUtil::MakeShape(xla::PrimitiveType::S32, {batch_size + 1});
+      xla::ShapeUtil::MakeShape(xla::PrimitiveType::S32, {q_shape[0] + 1});
   return xla::ShapeUtil::MakeTupleShape({softmax_lse_shape, shape_like(q),
                                          rng_state_shape, cu_seqlens_shape,
                                          cu_seqlens_shape});
@@ -276,9 +276,8 @@ XLA_REGISTER_CUSTOM_CALL_TARGET(custom_call_flash_attention_varlen_forward,
 std::vector<xla::XlaOp> BuildFlashAttentionVarlenForward(
     const xla::XlaOp& q, const xla::XlaOp& k, const xla::XlaOp& v,
     const xla::XlaOp& attention_mask, const xla::XlaOp& alibi_slopes,
-    const FlashAttentionForwardParams& params, const xla::Shape& output_shape) {
+    const std::string& opaque, const xla::Shape& output_shape) {
   auto builder = q.builder();
-  auto opaque = params.ToString();
   std::vector<xla::XlaOp> operands{q, k, v, attention_mask};
   std::vector<xla::Shape> operand_shapes_with_layout{
       shape_like(builder, q), shape_like(builder, k), shape_like(builder, v),
@@ -303,35 +302,32 @@ std::vector<xla::XlaOp> BuildFlashAttentionVarlenForward(
 FlashAttentionVarlenForward::FlashAttentionVarlenForward(
     const torch::lazy::Value& q, const torch::lazy::Value& k,
     const torch::lazy::Value& v, const torch::lazy::Value& attention_mask,
-    const FlashAttentionForwardParams& params, const std::string& params_str)
+    const std::string params)
     : XlaNode(xla_flash_attention_forward, {q, k, v, attention_mask},
-              NodeOutputShape(params.b, params.h, params.seqlen_q, q),
-              /*num_outputs=*/5, torch::lazy::MHash(params_str)),
-      params_(params),
-      params_str_(params_str) {}
+              NodeOutputShape(q),
+              /*num_outputs=*/5, torch::lazy::MHash(params)),
+      params_(params) {}
 
 FlashAttentionVarlenForward::FlashAttentionVarlenForward(
     const torch::lazy::Value& q, const torch::lazy::Value& k,
     const torch::lazy::Value& v, const torch::lazy::Value& attention_mask,
     const torch::lazy::Value& alibi_slopes,
-    const FlashAttentionForwardParams& params, const std::string& params_str)
+    const std::string params)
     : XlaNode(xla_flash_attention_forward,
               {q, k, v, attention_mask, alibi_slopes},
-              NodeOutputShape(params.b, params.h, params.seqlen_q, q),
-              /*num_outputs=*/5, torch::lazy::MHash(params_str)),
-      params_(params),
-      params_str_(params_str) {}
+              NodeOutputShape(q),
+              /*num_outputs=*/5, torch::lazy::MHash(params)),
+      params_(params) {}
 
 torch::lazy::NodePtr FlashAttentionVarlenForward::Clone(
     torch::lazy::OpList operands) const {
   if (operands.size() > 4) {
     torch::lazy::MakeNode<FlashAttentionVarlenForward>(
         operands.at(0), operands.at(1), operands.at(2), operands.at(3),
-        operands.at(4), params_, params_str_);
+        operands.at(4), params_);
   } else {
     torch::lazy::MakeNode<FlashAttentionVarlenForward>(
-        operands.at(0), operands.at(1), operands.at(2), operands.at(3), params_,
-        params_str_);
+        operands.at(0), operands.at(1), operands.at(2), operands.at(3), params_);
   }
 }
 

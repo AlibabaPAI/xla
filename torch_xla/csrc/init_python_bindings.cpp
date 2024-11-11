@@ -2412,7 +2412,6 @@ void InitXlaModuleBindings(py::module m) {
               q, k, v, attention_mask, alibi_slopes, p_dropout, softmax_scale,
               zero_tensors, is_causal, window_size_left, window_size_right,
               return_softmax);
-          auto params_str = params.ToString();
           // call flash attention forward
           XLATensorPtr q_xla = bridge::GetXlaTensor(q);
           XLATensorPtr k_xla = bridge::GetXlaTensor(k);
@@ -2428,10 +2427,10 @@ void InitXlaModuleBindings(py::module m) {
                 bridge::GetXlaTensor(attention_mask.value());
             xresults = tensor_methods::flash_attention_varlen_forward(
                 q_xla, k_xla, v_xla, attention_mask_xla, alibi_slopes_xla,
-                params, params_str);
+                params.ToString());
           } else {
             xresults = tensor_methods::flash_attention_forward(
-                q_xla, k_xla, v_xla, alibi_slopes_xla, params, params_str);
+                q_xla, k_xla, v_xla, alibi_slopes_xla, params.ToString());
           }
           std::vector<at::Tensor> results;
           for (auto& xresult : xresults) {
@@ -2457,7 +2456,6 @@ void InitXlaModuleBindings(py::module m) {
             dout, q, k, v, out, softmax_lse, cu_seqlens_q, cu_seqlens_k,
             alibi_slopes, p_dropout, softmax_scale, zero_tensors, is_causal,
             window_size_left, window_size_right, deterministic);
-        auto params_str = params.ToString();
         // call flash attention backward
         XLATensorPtr dout_xla = bridge::GetXlaTensor(dout);
         XLATensorPtr q_xla = bridge::GetXlaTensor(q);
@@ -2480,11 +2478,11 @@ void InitXlaModuleBindings(py::module m) {
           xresults = tensor_methods::flash_attention_varlen_backward(
               dout_xla, q_xla, k_xla, v_xla, out_xla, softmax_lse_xla,
               cu_seqlens_q_xla, cu_seqlens_k_xla, rng_state_xla,
-              alibi_slopes_xla, params, params_str);
+              alibi_slopes_xla, params.ToString());
         } else {
           xresults = tensor_methods::flash_attention_backward(
               dout_xla, q_xla, k_xla, v_xla, out_xla, softmax_lse_xla,
-              rng_state_xla, alibi_slopes_xla, params, params_str);
+              rng_state_xla, alibi_slopes_xla, params.ToString());
         }
         std::vector<at::Tensor> results;
         for (auto& xresult : xresults) {

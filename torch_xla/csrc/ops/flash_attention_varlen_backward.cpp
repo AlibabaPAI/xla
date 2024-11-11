@@ -366,10 +366,8 @@ std::vector<xla::XlaOp> BuildFlashAttentionVarlenBackward(
     const xla::XlaOp& v, const xla::XlaOp& out, const xla::XlaOp& softmax_lse,
     const xla::XlaOp& cu_seqlens_q, const xla::XlaOp& cu_seqlens_k,
     const xla::XlaOp& rng_state, const xla::XlaOp& alibi_slopes,
-    const FlashAttentionBackwardParams& params,
-    const xla::Shape& output_shape) {
+    const std::string& opaque, const xla::Shape& output_shape) {
   auto builder = q.builder();
-  auto opaque = params.ToString();
   std::vector<xla::XlaOp> operands{
       dout, q, k, v, out, softmax_lse, cu_seqlens_q, cu_seqlens_k, rng_state};
   std::vector<xla::Shape> operand_shapes_with_layout{
@@ -402,14 +400,13 @@ FlashAttentionVarlenBackward::FlashAttentionVarlenBackward(
     const torch::lazy::Value& out, const torch::lazy::Value& softmax_lse,
     const torch::lazy::Value& cu_seqlens_q,
     const torch::lazy::Value& cu_seqlens_k, const torch::lazy::Value& rng_state,
-    const FlashAttentionBackwardParams& params, const std::string& params_str)
+    const std::string params)
     : XlaNode(xla_flash_attention_backward,
               {dout, q, k, v, out, softmax_lse, cu_seqlens_q, cu_seqlens_k,
                rng_state},
               NodeOutputShape(q, k, v, softmax_lse),
-              /*num_outputs=*/4, torch::lazy::MHash(params_str)),
-      params_(params),
-      params_str_(params_str) {}
+              /*num_outputs=*/4, torch::lazy::MHash(params)),
+      params_(params) {}
 
 FlashAttentionVarlenBackward::FlashAttentionVarlenBackward(
     const torch::lazy::Value& dout, const torch::lazy::Value& q,
@@ -417,15 +414,13 @@ FlashAttentionVarlenBackward::FlashAttentionVarlenBackward(
     const torch::lazy::Value& out, const torch::lazy::Value& softmax_lse,
     const torch::lazy::Value& cu_seqlens_q,
     const torch::lazy::Value& cu_seqlens_k, const torch::lazy::Value& rng_state,
-    const torch::lazy::Value& alibi_slopes,
-    const FlashAttentionBackwardParams& params, const std::string& params_str)
+    const torch::lazy::Value& alibi_slopes, const std::string params)
     : XlaNode(xla_flash_attention_backward,
               {dout, q, k, v, out, softmax_lse, cu_seqlens_q, cu_seqlens_k,
                rng_state, alibi_slopes},
               NodeOutputShape(q, k, v, softmax_lse),
-              /*num_outputs=*/4, torch::lazy::MHash(params_str)),
-      params_(params),
-      params_str_(params_str) {}
+              /*num_outputs=*/4, torch::lazy::MHash(params)),
+      params_(params) {}
 
 torch::lazy::NodePtr FlashAttentionVarlenBackward::Clone(
     torch::lazy::OpList operands) const {
@@ -433,12 +428,12 @@ torch::lazy::NodePtr FlashAttentionVarlenBackward::Clone(
     torch::lazy::MakeNode<FlashAttentionVarlenBackward>(
         operands.at(0), operands.at(1), operands.at(2), operands.at(3),
         operands.at(4), operands.at(5), operands.at(6), operands.at(7),
-        operands.at(8), operands.at(9), params_, params_str_);
+        operands.at(8), operands.at(9), params_);
   } else {
     torch::lazy::MakeNode<FlashAttentionVarlenBackward>(
         operands.at(0), operands.at(1), operands.at(2), operands.at(3),
         operands.at(4), operands.at(5), operands.at(6), operands.at(7),
-        operands.at(8), params_, params_str_);
+        operands.at(8), params_);
   }
 }
 

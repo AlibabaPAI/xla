@@ -17,11 +17,12 @@
 namespace torch_xla {
 namespace {
 
-xla::Shape NodeOutputShape(int batch_size, int num_heads, int seqlen_q,
-                           const torch::lazy::Value& q) {
+xla::Shape NodeOutputShape(const torch::lazy::Value& q) {
+  auto q_shape = xla::SpanToVector(GetXlaShape(q).dimensions());
   xla::Shape softmax_lse_shape = xla::ShapeUtil::MakeShape(
       xla::PrimitiveType::F32,
-      {batch_size, num_heads, seqlen_q});  // seqlen_q: padding
+      {q_shape[0], q_shape[2],
+       q_shape[1]});  // batch_size, num_heads, seqlen_q(padding)
   xla::Shape rng_state_shape =
       xla::ShapeUtil::MakeShape(xla::PrimitiveType::S64, {2});
   return xla::ShapeUtil::MakeTupleShape(
@@ -281,10 +282,9 @@ XLA_REGISTER_CUSTOM_CALL_TARGET(custom_call_flash_attention_forward, "CUDA");
 
 std::vector<xla::XlaOp> BuildFlashAttentionForward(
     const xla::XlaOp& q, const xla::XlaOp& k, const xla::XlaOp& v,
-    const xla::XlaOp& alibi_slopes, const FlashAttentionForwardParams& params,
+    const xla::XlaOp& alibi_slopes, const std::string& params,
     const xla::Shape& output_shape) {
   auto builder = q.builder();
-  auto opaque = params.ToString();
   std::vector<xla::XlaOp> operands{q, k, v};
 
   std::vector<xla::Shape> operand_shapes_with_layout{
@@ -296,7 +296,7 @@ std::vector<xla::XlaOp> BuildFlashAttentionForward(
   }
   xla::XlaOp result = xla::CustomCallWithLayout(
       builder, "custom_call_flash_attention_forward", std::move(operands),
-      output_shape, std::move(operand_shapes_with_layout), opaque);
+      output_shape, std::move(operand_shapes_with_layout), params);
   return {/*softmax_lse*/ xla::GetTupleElement(result, 0),
           /*output*/ xla::GetTupleElement(result, 1),
           /*rng_state*/ xla::GetTupleElement(result, 2)};
@@ -304,35 +304,32 @@ std::vector<xla::XlaOp> BuildFlashAttentionForward(
 
 }  // namespace
 
-FlashAttentionForward::FlashAttentionForward(
-    const torch::lazy::Value& q, const torch::lazy::Value& k,
-    const torch::lazy::Value& v, const FlashAttentionForwardParams& params,
-    const std::string& params_str)
-    : XlaNode(xla_flash_attention_forward, {q, k, v},
-              NodeOutputShape(params.b, params.h, params.seqlen_q, q),
-              /*num_outputs=*/3, torch::lazy::MHash(params_str)),
-      params_(params),
-      params_str_(params_str) {}
+FlashAttentionForward::FlashAttentionForward(const torch::lazy::Value& q,
+                                             const torch::lazy::Value& k,
+                                             const torch::lazy::Value& v,
+                                             const std::string params)
+    : XlaNode(xla_flash_attention_forward, {q, k, v}, NodeOutputShape(q),
+              /*num_outputs=*/3, torch::lazy::MHash(params)),
+      params_(params) {}
 
 FlashAttentionForward::FlashAttentionForward(
     const torch::lazy::Value& q, const torch::lazy::Value& k,
     const torch::lazy::Value& v, const torch::lazy::Value& alibi_slopes,
-    const FlashAttentionForwardParams& params, const std::string& params_str)
+    const std::string params)
     : XlaNode(xla_flash_attention_forward, {q, k, v, alibi_slopes},
-              NodeOutputShape(params.b, params.h, params.seqlen_q, q),
-              /*num_outputs=*/3, torch::lazy::MHash(params_str)),
-      params_(params),
-      params_str_(params_str) {}
+              NodeOutputShape(q),
+              /*num_outputs=*/3, torch::lazy::MHash(params)),
+      params_(params) {}
 
 torch::lazy::NodePtr FlashAttentionForward::Clone(
     torch::lazy::OpList operands) const {
   if (operands.size() > 3) {
     torch::lazy::MakeNode<FlashAttentionForward>(operands.at(0), operands.at(1),
                                                  operands.at(2), operands.at(3),
-                                                 params_, params_str_);
+                                                 params_);
   } else {
-    torch::lazy::MakeNode<FlashAttentionForward>(
-        operands.at(0), operands.at(1), operands.at(2), params_, params_str_);
+    torch::lazy::MakeNode<FlashAttentionForward>(operands.at(0), operands.at(1),
+                                                 operands.at(2), params_);
   }
 }
 
