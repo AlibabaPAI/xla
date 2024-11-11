@@ -67,7 +67,7 @@ std::string FlashAttentionForwardParams::ToString() const {
 
 void FlashAttentionForwardParams::FromString(const std::string& str) {
   std::vector<std::string> params_list = absl::StrSplit(str, "|");
-  TORCH_CHECK(params_list.size() >= 34);  // at least 38 variables
+  TORCH_CHECK(params_list.size() >= 34);  // at least 34 variables
   absl::SimpleAtoi(params_list[0], &this->q_batch_stride);
   absl::SimpleAtoi(params_list[1], &this->k_batch_stride);
   absl::SimpleAtoi(params_list[2], &this->v_batch_stride);
@@ -129,7 +129,7 @@ void FlashAttentionBackwardParams::FromString(const std::string& str) {
   FlashAttentionForwardParams::FromString(str);
   std::vector<std::string> params_list = absl::StrSplit(str, "|");
   TORCH_CHECK(params_list.size() == 47);
-  const int offset = 34;  // FlashAttentionForwardParams has 38 variables
+  const int offset = 34;  // FlashAttentionForwardParams has 34 variables
   absl::SimpleAtoi(params_list[offset + 0], &this->do_batch_stride);
   absl::SimpleAtoi(params_list[offset + 1], &this->do_row_stride);
   absl::SimpleAtoi(params_list[offset + 2], &this->do_head_stride);
