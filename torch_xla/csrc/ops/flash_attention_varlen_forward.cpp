@@ -281,16 +281,16 @@ std::vector<xla::XlaOp> BuildFlashAttentionVarlenForward(
   auto opaque = params.ToString();
   std::vector<xla::XlaOp> operands{q, k, v, attention_mask};
   std::vector<xla::Shape> operand_shapes_with_layout{
-    shape_like(builder, q), shape_like(builder, k), shape_like(builder, v),
-    shape_like(builder, attention_mask)};
+      shape_like(builder, q), shape_like(builder, k), shape_like(builder, v),
+      shape_like(builder, attention_mask)};
   if (alibi_slopes.valid()) {
     operands.push_back(alibi_slopes);
     operand_shapes_with_layout.push_back(shape_like(builder, alibi_slopes));
   }
-  xla::XlaOp result =
-      xla::CustomCallWithLayout(builder, "custom_call_flash_attention_varlen_forward",
-                      std::move(operands), output_shape,
-                      std::move(operand_shapes_with_layout), opaque);
+  xla::XlaOp result = xla::CustomCallWithLayout(
+      builder, "custom_call_flash_attention_varlen_forward",
+      std::move(operands), output_shape, std::move(operand_shapes_with_layout),
+      opaque);
   return {/*softmax_lse*/ xla::GetTupleElement(result, 0),
           /*output*/ xla::GetTupleElement(result, 1),
           /*rng_state*/ xla::GetTupleElement(result, 2),

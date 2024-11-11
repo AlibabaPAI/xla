@@ -17,7 +17,8 @@
 namespace torch_xla {
 namespace {
 
-xla::Shape NodeOutputShape(int batch_size, int num_heads, int seqlen_q, const torch::lazy::Value& q) {
+xla::Shape NodeOutputShape(int batch_size, int num_heads, int seqlen_q,
+                           const torch::lazy::Value& q) {
   xla::Shape softmax_lse_shape = xla::ShapeUtil::MakeShape(
       xla::PrimitiveType::F32,
       {batch_size, num_heads, seqlen_q});  // seqlen_q: padding
@@ -287,16 +288,15 @@ std::vector<xla::XlaOp> BuildFlashAttentionForward(
   std::vector<xla::XlaOp> operands{q, k, v};
 
   std::vector<xla::Shape> operand_shapes_with_layout{
-    shape_like(builder, q), shape_like(builder, k), shape_like(builder, v)};
+      shape_like(builder, q), shape_like(builder, k), shape_like(builder, v)};
 
   if (alibi_slopes.valid()) {
     operands.push_back(alibi_slopes);
     operand_shapes_with_layout.push_back(shape_like(builder, alibi_slopes));
   }
-  xla::XlaOp result =
-      xla::CustomCallWithLayout(builder, "custom_call_flash_attention_forward",
-                                std::move(operands), output_shape,
-                                std::move(operand_shapes_with_layout), opaque);
+  xla::XlaOp result = xla::CustomCallWithLayout(
+      builder, "custom_call_flash_attention_forward", std::move(operands),
+      output_shape, std::move(operand_shapes_with_layout), opaque);
   return {/*softmax_lse*/ xla::GetTupleElement(result, 0),
           /*output*/ xla::GetTupleElement(result, 1),
           /*rng_state*/ xla::GetTupleElement(result, 2)};

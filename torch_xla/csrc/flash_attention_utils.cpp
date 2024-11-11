@@ -473,9 +473,8 @@ at::Tensor index_first_axis(const at::Tensor& input,
 }
 
 xla::Shape shape_like(const torch::lazy::Value& input) {
-  return xla::ShapeUtil::MakeShape(
-      GetXlaShape(input).element_type(),
-      GetXlaShape(input).dimensions());
+  return xla::ShapeUtil::MakeShape(GetXlaShape(input).element_type(),
+                                   GetXlaShape(input).dimensions());
 }
 
 xla::Shape shape_like(const xla::XlaBuilder* builder, const xla::XlaOp& input) {

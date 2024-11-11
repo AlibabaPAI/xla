@@ -4,9 +4,8 @@
 #include <torch/extension.h>
 
 #include "torch_xla/csrc/ir.h"
-
-#include "xla/shape.h"
 #include "xla/client/xla_builder.h"
+#include "xla/shape.h"
 
 namespace torch_xla {
 

@@ -21,9 +21,8 @@ xla::Shape NodeOutputShape(const torch::lazy::Value& q,
                            const torch::lazy::Value& k,
                            const torch::lazy::Value& v,
                            const torch::lazy::Value& softmax_lse) {
-  return xla::ShapeUtil::MakeTupleShape({shape_like(q), shape_like(k),
-                                         shape_like(v),
-                                         shape_like(softmax_lse)});
+  return xla::ShapeUtil::MakeTupleShape(
+      {shape_like(q), shape_like(k), shape_like(v), shape_like(softmax_lse)});
 }
 
 void run_mha_bwd(Flash_bwd_params& params, cudaStream_t stream,
@@ -374,18 +373,23 @@ std::vector<xla::XlaOp> BuildFlashAttentionVarlenBackward(
   std::vector<xla::XlaOp> operands{
       dout, q, k, v, out, softmax_lse, cu_seqlens_q, cu_seqlens_k, rng_state};
   std::vector<xla::Shape> operand_shapes_with_layout{
-      shape_like(builder, dout), shape_like(builder, q), shape_like(builder, k),
-      shape_like(builder, v), shape_like(builder, out), shape_like(builder, softmax_lse),
-      builder->GetShape(cu_seqlens_q).value(), builder->GetShape(cu_seqlens_k).value(),
+      shape_like(builder, dout),
+      shape_like(builder, q),
+      shape_like(builder, k),
+      shape_like(builder, v),
+      shape_like(builder, out),
+      shape_like(builder, softmax_lse),
+      builder->GetShape(cu_seqlens_q).value(),
+      builder->GetShape(cu_seqlens_k).value(),
       builder->GetShape(rng_state).value()};
   if (alibi_slopes.valid()) {
     operands.push_back(alibi_slopes);
     operand_shapes_with_layout.push_back(shape_like(builder, alibi_slopes));
   }
-  xla::XlaOp result =
-      xla::CustomCallWithLayout(builder, "custom_call_flash_attention_varlen_backward",
-                      std::move(operands), output_shape,
-                      std::move(operand_shapes_with_layout), opaque);
+  xla::XlaOp result = xla::CustomCallWithLayout(
+      builder, "custom_call_flash_attention_varlen_backward",
+      std::move(operands), output_shape, std::move(operand_shapes_with_layout),
+      opaque);
   return {xla::GetTupleElement(result, 0), xla::GetTupleElement(result, 1),
           xla::GetTupleElement(result, 2), xla::GetTupleElement(result, 3)};
 }
