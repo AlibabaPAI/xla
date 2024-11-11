@@ -8,28 +8,22 @@ namespace torch_xla {
 
 class FlashAttentionVarlenBackward : public XlaNode {
  public:
-  FlashAttentionVarlenBackward(const torch::lazy::Value& dout,
-                               const torch::lazy::Value& q,
-                               const torch::lazy::Value& k,
-                               const torch::lazy::Value& v,
-                               const torch::lazy::Value& out,
-                               const torch::lazy::Value& softmax_lse,
-                               const torch::lazy::Value& cu_seqlens_q,
-                               const torch::lazy::Value& cu_seqlens_k,
-                               const torch::lazy::Value& rng_state,
-                               const std::string params);
+  FlashAttentionVarlenBackward(
+      const torch::lazy::Value& dout, const torch::lazy::Value& q,
+      const torch::lazy::Value& k, const torch::lazy::Value& v,
+      const torch::lazy::Value& out, const torch::lazy::Value& softmax_lse,
+      const torch::lazy::Value& cu_seqlens_q,
+      const torch::lazy::Value& cu_seqlens_k,
+      const torch::lazy::Value& rng_state, const std::string params);
 
-  FlashAttentionVarlenBackward(const torch::lazy::Value& dout,
-                               const torch::lazy::Value& q,
-                               const torch::lazy::Value& k,
-                               const torch::lazy::Value& v,
-                               const torch::lazy::Value& out,
-                               const torch::lazy::Value& softmax_lse,
-                               const torch::lazy::Value& cu_seqlens_q,
-                               const torch::lazy::Value& cu_seqlens_k,
-                               const torch::lazy::Value& rng_state,
-                               const torch::lazy::Value& alibi_slopes,
-                               const std::string params);
+  FlashAttentionVarlenBackward(
+      const torch::lazy::Value& dout, const torch::lazy::Value& q,
+      const torch::lazy::Value& k, const torch::lazy::Value& v,
+      const torch::lazy::Value& out, const torch::lazy::Value& softmax_lse,
+      const torch::lazy::Value& cu_seqlens_q,
+      const torch::lazy::Value& cu_seqlens_k,
+      const torch::lazy::Value& rng_state,
+      const torch::lazy::Value& alibi_slopes, const std::string params);
 
   torch::lazy::NodePtr Clone(torch::lazy::OpList operands) const override;
 

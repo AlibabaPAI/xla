@@ -21,7 +21,8 @@ xla::Shape NodeOutputShape(const torch::lazy::Value& q) {
   auto q_shape = xla::SpanToVector(GetXlaShape(q).dimensions());
   xla::Shape softmax_lse_shape = xla::ShapeUtil::MakeShape(
       xla::PrimitiveType::F32,
-      {q_shape[0], q_shape[2], q_shape[1]});  // batch_size, num_heads, seqlen_q(padding)
+      {q_shape[0], q_shape[2],
+       q_shape[1]});  // batch_size, num_heads, seqlen_q(padding)
   xla::Shape rng_state_shape =
       xla::ShapeUtil::MakeShape(xla::PrimitiveType::U64, {2});
   xla::Shape cu_seqlens_shape =
@@ -311,11 +312,9 @@ FlashAttentionVarlenForward::FlashAttentionVarlenForward(
 FlashAttentionVarlenForward::FlashAttentionVarlenForward(
     const torch::lazy::Value& q, const torch::lazy::Value& k,
     const torch::lazy::Value& v, const torch::lazy::Value& attention_mask,
-    const torch::lazy::Value& alibi_slopes,
-    const std::string params)
+    const torch::lazy::Value& alibi_slopes, const std::string params)
     : XlaNode(xla_flash_attention_forward,
-              {q, k, v, attention_mask, alibi_slopes},
-              NodeOutputShape(q),
+              {q, k, v, attention_mask, alibi_slopes}, NodeOutputShape(q),
               /*num_outputs=*/5, torch::lazy::MHash(params)),
       params_(params) {}
 
@@ -327,7 +326,8 @@ torch::lazy::NodePtr FlashAttentionVarlenForward::Clone(
         operands.at(4), params_);
   } else {
     torch::lazy::MakeNode<FlashAttentionVarlenForward>(
-        operands.at(0), operands.at(1), operands.at(2), operands.at(3), params_);
+        operands.at(0), operands.at(1), operands.at(2), operands.at(3),
+        params_);
   }
 }
 

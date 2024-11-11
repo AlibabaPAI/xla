@@ -10,8 +10,7 @@ class FlashAttentionForward : public XlaNode {
  public:
   FlashAttentionForward(const torch::lazy::Value& q,
                         const torch::lazy::Value& k,
-                        const torch::lazy::Value& v,
-                        const std::string params);
+                        const torch::lazy::Value& v, const std::string params);
 
   FlashAttentionForward(const torch::lazy::Value& q,
                         const torch::lazy::Value& k,

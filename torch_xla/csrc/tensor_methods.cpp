@@ -667,8 +667,7 @@ std::vector<XLATensorPtr> flash_attention_backward(
     const XLATensorPtr& dout, const XLATensorPtr& q, const XLATensorPtr& k,
     const XLATensorPtr& v, const XLATensorPtr& out,
     const XLATensorPtr& softmax_lse, const XLATensorPtr& rng_state,
-    const XLATensorPtr& alibi_slopes,
-    const std::string& params) {
+    const XLATensorPtr& alibi_slopes, const std::string& params) {
   if (alibi_slopes) {
     torch::lazy::NodePtr node = torch::lazy::MakeNode<FlashAttentionBackward>(
         dout->GetIrValue(), q->GetIrValue(), k->GetIrValue(), v->GetIrValue(),
@@ -689,8 +688,7 @@ std::vector<XLATensorPtr> flash_attention_varlen_backward(
     const XLATensorPtr& v, const XLATensorPtr& out,
     const XLATensorPtr& softmax_lse, const XLATensorPtr& cu_seqlens_q,
     const XLATensorPtr& cu_seqlens_k, const XLATensorPtr& rng_state,
-    const XLATensorPtr& alibi_slopes,
-    const std::string& params) {
+    const XLATensorPtr& alibi_slopes, const std::string& params) {
   if (alibi_slopes) {
     torch::lazy::NodePtr node =
         torch::lazy::MakeNode<FlashAttentionVarlenBackward>(

@@ -1,14 +1,13 @@
-import os, sys
-import unittest
+import os
+import pytest
+
+import torch
+import torch.nn.functional as F
+import torch_xla
 
 from flash_attn import flash_attn_varlen_func
 from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
-import numpy as np
-import torch
-import torch.nn.functional as F
-import pytest
 import torchacc as ta
-import torch_xla
 
 
 def _get_unpad_data(attention_mask):

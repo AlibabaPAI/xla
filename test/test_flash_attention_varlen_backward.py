@@ -1,14 +1,13 @@
-import os, sys
-import unittest
+import os
+import pytest
+
+import torch
+import torch.nn.functional as F
+import torch_xla
+import torch_xla.core.xla_model as xm
 
 from flash_attn import flash_attn_varlen_func
 from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
-import numpy as np
-import torch
-import torch.nn.functional as F
-import pytest
-import torch_xla
-import torch_xla.core.xla_model as xm
 import flash_attn_2_cuda as flash_attn_cuda
 import torchacc as ta
 

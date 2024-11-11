@@ -127,16 +127,14 @@ std::vector<XLATensorPtr> flash_attention_backward(
     const XLATensorPtr& dout, const XLATensorPtr& q, const XLATensorPtr& k,
     const XLATensorPtr& v, const XLATensorPtr& out,
     const XLATensorPtr& softmax_lse, const XLATensorPtr& rng_state,
-    const XLATensorPtr& alibi_slopes,
-    const std::string& params);
+    const XLATensorPtr& alibi_slopes, const std::string& params);
 
 std::vector<XLATensorPtr> flash_attention_varlen_backward(
     const XLATensorPtr& dout, const XLATensorPtr& q, const XLATensorPtr& k,
     const XLATensorPtr& v, const XLATensorPtr& out,
     const XLATensorPtr& softmax_lse, const XLATensorPtr& cu_seqlens_q,
     const XLATensorPtr& cu_seqlens_k, const XLATensorPtr& rng_state,
-    const XLATensorPtr& alibi_slopes,
-    const std::string& params);
+    const XLATensorPtr& alibi_slopes, const std::string& params);
 
 std::vector<XLATensorPtr> user_computation(
     const std::string& opname, absl::Span<const XLATensorPtr> inputs,

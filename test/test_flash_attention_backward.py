@@ -1,13 +1,12 @@
 import os
-import unittest
+import pytest
 
-from flash_attn import flash_attn_func
-import numpy as np
 import torch
 import torch.nn.functional as F
-import pytest
 import torch_xla
 import torch_xla.core.xla_model as xm
+
+from flash_attn import flash_attn_func
 import flash_attn_2_cuda as flash_attn_cuda
 import torchacc as ta
 
