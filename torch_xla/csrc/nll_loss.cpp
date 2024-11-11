@@ -67,9 +67,63 @@ xla::XlaOp LabelsToOneHot(xla::XlaBuilder* builder, int64_t depth, int axis,
   std::iota(broadcast_dims.begin() + axis, broadcast_dims.end(), axis + 1);
   xla::XlaOp one_hot_bool = xla::Eq(indices, iota, broadcast_dims);
 
+  const xla::Shape& one_hot_shape = ShapeHelper::ShapeOfXlaOp(one_hot_bool);
+  if (XlaHelpers::IsDISCBackend() && one_hot_shape.is_dynamic()) {
+    xla::Shape final_shape = xla::ShapeUtil::MakeShape(
+        XlaHelpers::TypeOfXlaOp(on_value), one_hot_shape.dimensions(),
+        runtime::util::ToVector<bool>(one_hot_shape.dynamic_dimensions()));
+    xla::XlaOp sym_op = XlaHelpers::CreateOutputDimsTensor(one_hot_bool);
+    on_value = xla::DynamicBroadcastInDim(on_value, sym_op, {}, final_shape);
+    off_value = xla::DynamicBroadcastInDim(off_value, sym_op, {}, final_shape);
+    return xla::Select(one_hot_bool, on_value, off_value);
+  }
   // Selects the user-provided off_value and on_value values.
   return xla::Select(one_hot_bool, xla::Broadcast(on_value, output_dimensions),
                      xla::Broadcast(off_value, output_dimensions));
+}
+
+WeightScale DynamicGetMaskedWeight(xla::XlaOp weight, xla::XlaOp logits,
+                                   const xla::Shape& logits_shape,
+                                   xla::XlaOp labels, xla::XlaOp one_hot_labels,
+                                   int axis, int ignore_index,
+                                   bool non_zero_scale) {
+  const xla::Shape& labels_shape = ShapeHelper::ShapeOfXlaOp(labels);
+  xla::XlaOp valid_bitmap = xla::Ne(
+      labels, XlaHelpers::ScalarValue<int64_t>(
+                  ignore_index, labels_shape.element_type(), labels.builder()));
+  xla::XlaOp xweight;
+  xla::Shape f32_shape = xla::ShapeUtil::MakeShape(
+      xla::PrimitiveType::F32, logits_shape.dimensions(),
+      runtime::util::ToVector<bool>(logits_shape.dynamic_dimensions()));
+  xla::XlaOp sym_op = XlaHelpers::CreateOutputDimsTensor(logits);
+  if (!weight.IsUninitialized()) {
+    xla::Shape weight_shape = f32_shape;
+    weight_shape.set_element_type(XlaHelpers::TypeOfXlaOp(weight));
+    xweight = xla::DynamicBroadcastInDim(weight, sym_op, {1}, logits_shape);
+  } else {
+    xweight = XlaHelpers::DynamicScalarBroadcast<float>(1.0, logits);
+  }
+  xla::XlaOp zeros = XlaHelpers::DynamicScalarBroadcast<float>(0.0, logits);
+  std::vector<int64_t> broadcast_dims(labels_shape.rank());
+  std::iota(broadcast_dims.begin(), broadcast_dims.begin() + axis, 0);
+  std::iota(broadcast_dims.begin() + axis, broadcast_dims.end(), axis + 1);
+
+  xla::Shape valid_shape = f32_shape;
+  valid_shape.set_element_type(XlaHelpers::TypeOfXlaOp(valid_bitmap));
+  xla::XlaOp xvalid_bitmap =
+      DynamicBroadcastInDim(valid_bitmap, sym_op, broadcast_dims, valid_shape);
+  xla::XlaOp result_weight =
+      xla::Select(xvalid_bitmap, xweight, zeros) * one_hot_labels;
+
+  xla::XlaComputation add_func =
+      XlaHelpers::CreateAddComputation(logits_shape.element_type());
+  xla::XlaOp zero = xla::Zero(labels.builder(), logits_shape.element_type());
+  xla::XlaOp scale = xla::ReduceAll(result_weight, zero, add_func);
+  if (non_zero_scale) {
+    xla::XlaOp one = xla::One(labels.builder(), logits_shape.element_type());
+    scale = xla::Select(xla::Ne(scale, zero), scale, one);
+  }
+  return {result_weight, scale};
 }
 
 WeightScale GetMaskedWeight(xla::XlaOp weight, const xla::Shape& logits_shape,
@@ -129,14 +183,26 @@ xla::XlaOp BuildNllLoss(xla::XlaOp logits, xla::XlaOp labels, xla::XlaOp weight,
   // 0 or logits has NaN in that index). Without replacing them to 0, reduction
   // will return NaN regardless of labelded logit values.
   xla::XlaOp non_labeled_mask = xla::Ne(one_hot_labels, one);
-  labeled_logits = xla::Select(non_labeled_mask,
-                               xla::Broadcast(zero, logits_shape.dimensions()),
-                               labeled_logits);
+  xla::XlaOp zero_logits;
+  if (XlaHelpers::IsDISCBackend() && logits_shape.is_dynamic()) {
+    zero_logits = xla::DynamicBroadcastInDim(
+        zero, XlaHelpers::CreateOutputDimsTensor(logits), {}, logits_shape);
+  } else {
+    zero_logits = xla::Broadcast(zero, logits_shape.dimensions());
+  }
+  labeled_logits = xla::Select(non_labeled_mask, zero_logits, labeled_logits);
   // When the whole target is equal to the ignore_index in the nll_loss forward,
   // pytorch will return nan hence scale should be 0.
-  WeightScale weight_scale = GetMaskedWeight(
-      weight, logits_shape, labels, one_hot_labels, classes_axis, ignore_index,
-      /*non_zero_scale=*/false);
+  WeightScale weight_scale;
+  if (XlaHelpers::IsDISCBackend() && logits_shape.is_dynamic()) {
+    weight_scale = DynamicGetMaskedWeight(
+        weight, logits, logits_shape, labels, one_hot_labels, classes_axis,
+        ignore_index, /*non_zero_scale=*/false);
+  } else {
+    weight_scale =
+        GetMaskedWeight(weight, logits_shape, labels, one_hot_labels,
+                        classes_axis, ignore_index, /*non_zero_scale=*/false);
+  }
   labeled_logits = labeled_logits * weight_scale.weight;
   xla::XlaComputation add_func =
       XlaHelpers::CreateAddComputation(logits_shape.element_type());
@@ -172,17 +238,35 @@ xla::XlaOp BuildNllLossBackward(xla::XlaOp grad_output, xla::XlaOp logits,
   const xla::Shape& grad_output_shape = ShapeHelper::ShapeOfXlaOp(grad_output);
   xla::XlaOp grad = grad_output;
   if (grad_output_shape.rank() == 1) {
-    grad = xla::BroadcastInDim(grad, logits_shape.dimensions(), {0});
+    if (XlaHelpers::IsDISCBackend() && logits_shape.is_dynamic()) {
+      grad = xla::DynamicBroadcastInDim(
+          grad, XlaHelpers::CreateOutputDimsTensor(logits), {0}, logits_shape);
+    } else {
+      grad = xla::BroadcastInDim(grad, logits_shape.dimensions(), {0});
+    }
   } else if (grad_output_shape.rank() == 3) {
     // nll_loss_2d case
-    grad = xla::BroadcastInDim(grad, logits_shape.dimensions(), {0, 2, 3});
+    if (XlaHelpers::IsDISCBackend() && logits_shape.is_dynamic()) {
+      grad = xla::DynamicBroadcastInDim(
+          grad, XlaHelpers::CreateOutputDimsTensor(logits), {0, 2, 3},
+          logits_shape);
+    } else {
+      grad = xla::BroadcastInDim(grad, logits_shape.dimensions(), {0, 2, 3});
+    }
   }
   xla::XlaOp result = xla::Neg(one_hot_labels) * grad;
   // When the whole target is equal to the ignore_index in the nll_loss
   // backward, pytorch will return 0 hence scale should not be 0.
-  WeightScale weight_scale =
-      GetMaskedWeight(weight, logits_shape, labels, one_hot_labels,
-                      classes_axis, ignore_index, /*non_zero_scale=*/true);
+  WeightScale weight_scale;
+  if (XlaHelpers::IsDISCBackend() && logits_shape.is_dynamic()) {
+    weight_scale = DynamicGetMaskedWeight(
+        weight, logits, logits_shape, labels, one_hot_labels, classes_axis,
+        ignore_index, /*non_zero_scale=*/true);
+  } else {
+    weight_scale =
+        GetMaskedWeight(weight, logits_shape, labels, one_hot_labels,
+                        classes_axis, ignore_index, /*non_zero_scale=*/true);
+  }
   result = result * weight_scale.weight;
   if (reduction_mode != ReductionMode::kMean) {
     return result;

@@ -406,12 +406,15 @@ symint:
   - empty.memory_format
   - empty_strided
   - expand_copy
+  - full
   - new_empty_strided
   - view_copy
   - diagonal_backward
   - narrow_copy
   - select_backward
   - select.int
+  - slice_backward
+  - slice_copy.Tensor
   # See Note: [Disabling functionalization]
   - expand
   - view
