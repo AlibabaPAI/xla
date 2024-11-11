@@ -55,38 +55,41 @@ def test_flash_attn_output(seqlen_q, seqlen_k, d, dropout_p, causal,
   window_size = (-1, -1) if not local else tuple(
       torch.randint(0, seqlen_k, (2,)).tolist())
   torch.cuda.synchronize()
-  q = torch.randn(
-      batch_size,
+  q_cuda = torch.randn(
       seqlen_q,
+      batch_size,
       nheads,
       d,
       device=device,
       dtype=dtype,
       requires_grad=True)
-  k = torch.randn(
-      batch_size,
+  k_cuda = torch.randn(
       seqlen_k,
+      batch_size,
       nheads_k,
       d,
       device=device,
       dtype=dtype,
       requires_grad=True)
-  v = torch.randn(
-      batch_size,
+  v_cuda = torch.randn(
       seqlen_k,
+      batch_size,
       nheads_k,
       d,
       device=device,
       dtype=dtype,
       requires_grad=True)
 
-  softmax_scale = q.shape[-1]**(-0.5)
+  softmax_scale = q_cuda.shape[-1]**(-0.5)
 
   if alibi:
     alibi_slopes = torch.rand(
         batch_size, nheads, device=device, dtype=torch.float32) * 0.3
   else:
     alibi_slopes = None
+  q = q_cuda.transpose(0, 1)
+  k = k_cuda.transpose(0, 1)
+  v = v_cuda.transpose(0, 1)
   out_fa, softmax_lse, _ = flash_attn_func(
       q,
       k,
@@ -110,12 +113,12 @@ def test_flash_attn_output(seqlen_q, seqlen_k, d, dropout_p, causal,
 
   device = ta.lazy_device()
   torch.random.manual_seed(100)
-  q_xla = q.to(device)
-  k_xla = k.to(device)
-  v_xla = v.to(device)
-  q_xla.requires_grad = True
-  k_xla.requires_grad = True
-  v_xla.requires_grad = True
+  q_xla = q_cuda.to(device)
+  k_xla = k_cuda.to(device)
+  v_xla = v_cuda.to(device)
+  q_xla = q_xla.transpose(0, 1)
+  k_xla = k_xla.transpose(0, 1)
+  v_xla = v_xla.transpose(0, 1)
   if alibi:
     alibi_slopes = alibi_slopes.cpu().to(device)
   softmax_lse_xla, out_xla, rng_state_xla = torch_xla._XLAC._flash_attention_forward(

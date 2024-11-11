@@ -242,24 +242,6 @@ void custom_call_flash_attention_forward(cudaStream_t stream, void** buffers,
     }
   }
 
-  TF_VLOG(3) << ", q_row_stride=" << launch_params.q_row_stride
-             << ", q_head_stride=" << launch_params.q_head_stride
-             << ", o_row_stride=" << launch_params.o_row_stride
-             << ", o_head_stride=" << launch_params.o_head_stride
-             << ", q_batch_stride=" << launch_params.q_batch_stride
-             << ", b, seqlen_q, seqlen_k, d, seqlen_q_rounded, seqlen_k_rounded, d_rounded="
-             << launch_params.b << "," << launch_params.seqlen_q  << "," <<  launch_params.seqlen_k
-             << "," << launch_params.d << "," << launch_params.seqlen_q_rounded
-             << "," << launch_params.seqlen_k_rounded << "," << launch_params.d_rounded
-             << ", p_dropout=" << launch_params.p_dropout
-             << ", rp_dropout=" << launch_params.rp_dropout
-             << ", window_size_left=" << launch_params.window_size_left
-             << ", window_size_right=" << launch_params.window_size_right
-             << ", is_bf16=" << launch_params.is_bf16
-             << ", is_causal=" << launch_params.is_causal
-             << ", is_seqlens_k_cumulative=" << launch_params.is_seqlens_k_cumulative
-             << ", num_splits=" << launch_params.num_splits;
-
   int64_t counter_offset = params.b * params.h * 32;
 
   auto rng_state =
@@ -293,15 +275,6 @@ void custom_call_flash_attention_forward(cudaStream_t stream, void** buffers,
 
   cudaEventRecord(xla_wait_torch_event, torch_stream);
   cudaStreamWaitEvent(stream, xla_wait_torch_event);
-  TF_VLOG(3) << " Q[0], Q[4][8][16][2], Q[-1][-1][-1][-1], sumQ = "
-             << q[0][0][0][0] << "," << q[4][8][16][2] << "," << q[-1][-1][-1][-1] << "," << torch::sum(q)
-             << ", K[0], K[4][8][16][2], K[-1][-1][-1][-1], sumK = "
-             << k[0][0][0][0] << "," << k[4][8][16][2] << "," << k[-1][-1][-1][-1] << "," << torch::sum(k)
-             << ", V[0], V[4][8][16][2], V[-1][-1][-1][-1], sumV = "
-             << v[0][0][0][0] << "," << v[4][8][16][2] << "," << v[-1][-1][-1][-1] << "," << torch::sum(v)
-             << ", O[0], O[4][8][16][2], O[-1][-1][-1][-1], sumO = "
-             << out[0][0][0][0] << "," << out[4][8][16][2] << "," << out[-1][-1][-1][-1] << "," << torch::sum(out);
-
 }
 XLA_REGISTER_CUSTOM_CALL_TARGET(custom_call_flash_attention_forward, "CUDA");
 
