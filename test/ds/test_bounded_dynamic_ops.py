@@ -9,36 +9,12 @@ import torch_xla.core.xla_model as xm
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 import test_utils
 
-pd = torch._C._EnablePythonDispatcher()
-dev = xm.xla_device()
+PD = torch._C._EnablePythonDispatcher()
+XLA_DEVICE = xm.xla_device()
 
 
-def mark_dynamic(t, dims, bounds):
+def _mark_dynamic(t, dims, bounds):
   torch_xla._XLAC._xla_mark_bounded_dynamic(t, dims, bounds)
-
-
-def diff_output(testcase,
-                output1,
-                output2,
-                atol=1e-3,
-                rtol=1e-5,
-                equal_nan=True):
-  if isinstance(output1, torch.Tensor):
-    testcase.assertIsInstance(output2, torch.Tensor)
-    output2_cpu = output2.detach().cpu()
-    if output2_cpu.dtype != output1.dtype:
-      output2_cpu = output2_cpu.to(output1.dtype)
-    testcase.assertEqual(output1.shape, output2.shape)
-    testcase.assertTrue(
-        torch.allclose(
-            output1, output2_cpu, atol=atol, rtol=rtol, equal_nan=equal_nan))
-  elif isinstance(output1, (tuple, list)):
-    testcase.assertIsInstance(output2, (tuple, list))
-    testcase.assertEqual(len(output1), len(output2))
-    for o1, o2 in zip(output1, output2):
-      diff_output(testcase, o1, o2, rtol, atol)
-  else:
-    testcase.assertEqual(output1, output2)
 
 
 # Copied from transformers.models.bart.modeling_bart._make_causal_mask
@@ -110,18 +86,17 @@ def _prepare_decoder_attention_mask(attention_mask, input_shape, inputs_embeds,
 
 class TestBoundedDynamicOps(test_utils.XlaTestCase):
 
-  def diff_output(self,
-                  torch_out,
-                  xla_out,
-                  atol=1e-3,
-                  rtol=1e-5,
-                  equal_nan=True):
+  def _diff_output(self,
+                   torch_out,
+                   xla_out,
+                   atol=1e-3,
+                   rtol=1e-5,
+                   equal_nan=True):
     if isinstance(torch_out, torch.Tensor):
       self.assertIsInstance(xla_out, torch.Tensor)
       torch_out = torch_out.detach().cpu()
       xla_out = xla_out.detach().cpu()
-      if xla_out.dtype != torch_out.dtype:
-        xla_out = xla_out.to(torch_out.dtype)
+      self.assertEqual(xla_out.dtype, torch_out.dtype)
       self.assertEqual(torch_out.shape, xla_out.shape)
       self.assertTrue(
           torch.allclose(
@@ -130,7 +105,7 @@ class TestBoundedDynamicOps(test_utils.XlaTestCase):
       self.assertIsInstance(xla_out, (tuple, list))
       self.assertEqual(len(torch_out), len(xla_out))
       for o1, o2 in zip(torch_out, xla_out):
-        self.diff_output(o1, o2, rtol, atol)
+        self._diff_output(o1, o2, rtol, atol)
     else:
       self.assertEqual(torch_out, xla_out)
 
@@ -139,54 +114,54 @@ class TestBoundedDynamicOps(test_utils.XlaTestCase):
     t2 = torch.randn([5, 2])
     torch_out = t1 + t2
 
-    t1 = t1.to(dev)
-    t2 = t2.to(dev)
-    mark_dynamic(t1, [0], [10])
-    mark_dynamic(t2, [0], [10])
+    t1 = t1.to(XLA_DEVICE)
+    t2 = t2.to(XLA_DEVICE)
+    _mark_dynamic(t1, [0], [10])
+    _mark_dynamic(t2, [0], [10])
     xla_out = t1 + t2
-    self.diff_output(torch_out, xla_out)
+    self._diff_output(torch_out, xla_out)
 
   def test_add_broadcast(self):
     t1 = torch.randn([5, 2])
     t2 = torch.randn([2])
     torch_out = t1 + t2
 
-    t1 = t1.to(dev)
-    t2 = t2.to(dev)
-    mark_dynamic(t1, [0], [10])
+    t1 = t1.to(XLA_DEVICE)
+    t2 = t2.to(XLA_DEVICE)
+    _mark_dynamic(t1, [0], [10])
     xla_out = t1 + t2
-    self.diff_output(torch_out, xla_out)
+    self._diff_output(torch_out, xla_out)
 
   def test_add_scalar(self):
     t1 = torch.randn([5, 2])
     t2 = 1.0
     torch_out = t1 + t2
 
-    t1 = t1.to(dev)
-    mark_dynamic(t1, [0], [10])
+    t1 = t1.to(XLA_DEVICE)
+    _mark_dynamic(t1, [0], [10])
     xla_out = t1 + t2
-    self.diff_output(torch_out, xla_out)
+    self._diff_output(torch_out, xla_out)
 
   def test_reshape(self):
     x = torch.randn(4, 101, 100)
     y = torch.randn(4 * 101 * 100)
     torch_out = y.reshape(x.shape[0], x.shape[1], -1)
 
-    x = x.to(dev)
-    y = y.to(dev)
-    mark_dynamic(x, [0, 1], [10, 200])
-    mark_dynamic(y, [0], [10 * 200 * 100])
+    x = x.to(XLA_DEVICE)
+    y = y.to(XLA_DEVICE)
+    _mark_dynamic(x, [0, 1], [10, 200])
+    _mark_dynamic(y, [0], [10 * 200 * 100])
     xla_out = y.reshape(x.shape[0], x.shape[1], -1)
-    self.diff_output(torch_out, xla_out)
+    self._diff_output(torch_out, xla_out)
 
   def test_flatten(self):
     x = torch.randn(4, 101, 100)
     torch_out = x.flatten(0, 1)
 
-    x = x.to(dev)
-    mark_dynamic(x, [0], [10])
+    x = x.to(XLA_DEVICE)
+    _mark_dynamic(x, [0], [10])
     xla_out = x.flatten(0, 1)
-    self.diff_output(torch_out, xla_out)
+    self._diff_output(torch_out, xla_out)
 
   def test_arange(self):
     x = torch.randn(4, 101, 100)
@@ -196,14 +171,14 @@ class TestBoundedDynamicOps(test_utils.XlaTestCase):
         dtype=torch.int32,
         device=x.device)
 
-    x = x.to(dev)
-    mark_dynamic(x, [1], [200])
+    x = x.to(XLA_DEVICE)
+    _mark_dynamic(x, [1], [200])
     xla_out = torch.arange(
         0, (x.shape[0] + 1) * x.shape[1],
         step=x.shape[1],
         dtype=torch.int32,
         device=x.device)
-    self.diff_output(torch_out, xla_out)
+    self._diff_output(torch_out, xla_out)
 
   def test_slice_with_backward(self):
     x = torch.randn(4, 101, 100)
@@ -214,17 +189,17 @@ class TestBoundedDynamicOps(test_utils.XlaTestCase):
     torch.autograd.backward(torch_out, torch.zeros_like(torch_out))
     torch_grad = y.grad
 
-    x = x.detach().to(dev)
-    y = y.detach().to(dev)
+    x = x.detach().to(XLA_DEVICE)
+    y = y.detach().to(XLA_DEVICE)
     x.requires_grad = True
     y.requires_grad = True
-    mark_dynamic(x, [1], [200])
+    _mark_dynamic(x, [1], [200])
     xla_out = y[0:10, 10:x.shape[1], ...]
     torch.autograd.backward(xla_out, torch.zeros_like(xla_out))
     xla_grad = y.grad
 
-    self.diff_output(torch_out, xla_out)
-    self.diff_output(torch_grad, xla_grad)
+    self._diff_output(torch_out, xla_out)
+    self._diff_output(torch_grad, xla_grad)
 
   def test_attn_mask(self):
     inputs_embeds = torch.randn(4, 101)
@@ -234,91 +209,91 @@ class TestBoundedDynamicOps(test_utils.XlaTestCase):
         attention_mask, (inputs_embeds.shape[0], inputs_embeds.shape[1]),
         inputs_embeds, 0)
 
-    inputs_embeds = inputs_embeds.to(dev)
-    attention_mask = attention_mask.to(dev)
-    mark_dynamic(inputs_embeds, [1], [200])
-    mark_dynamic(attention_mask, [1], [200])
+    inputs_embeds = inputs_embeds.to(XLA_DEVICE)
+    attention_mask = attention_mask.to(XLA_DEVICE)
+    _mark_dynamic(inputs_embeds, [1], [200])
+    _mark_dynamic(attention_mask, [1], [200])
     xla_out = _prepare_decoder_attention_mask(
         attention_mask, (inputs_embeds.shape[0], inputs_embeds.shape[1]),
         inputs_embeds, 0)
 
-    self.diff_output(torch_out, xla_out)
+    self._diff_output(torch_out, xla_out)
 
   def test_matmul_0(self):
     t1 = torch.randn([5, 2]).to(torch.bfloat16)
     t2 = torch.randn([2, 3]).to(torch.bfloat16)
     torch_out = t1.to("cuda") @ t2.to("cuda")
 
-    t1 = t1.to(dev)
-    t2 = t2.to(dev)
-    mark_dynamic(t1, [0], [10])
+    t1 = t1.to(XLA_DEVICE)
+    t2 = t2.to(XLA_DEVICE)
+    _mark_dynamic(t1, [0], [10])
     xla_out = t1 @ t2
 
     self.assertIn('<=10,3', torch_xla._XLAC._get_xla_tensors_text([xla_out]))
-    self.diff_output(torch_out, xla_out)
+    self._diff_output(torch_out, xla_out)
 
   def test_matmul_1(self):
     t1 = torch.randn([5, 2]).to(torch.bfloat16)
     t2 = torch.randn([2]).to(torch.bfloat16)
     torch_out = t1.to("cuda") @ t2.to("cuda")
 
-    t1 = t1.to(dev)
-    t2 = t2.to(dev)
-    mark_dynamic(t1, [0], [10])
+    t1 = t1.to(XLA_DEVICE)
+    t2 = t2.to(XLA_DEVICE)
+    _mark_dynamic(t1, [0], [10])
     xla_out = t1 @ t2
 
     self.assertIn('<=10', torch_xla._XLAC._get_xla_tensors_text([xla_out]))
-    self.diff_output(torch_out, xla_out)
+    self._diff_output(torch_out, xla_out)
 
   def test_matmul_2(self):
     t1 = torch.randn([10, 5, 2]).to(torch.bfloat16)
     t2 = torch.randn([2]).to(torch.bfloat16)
     torch_out = t1.to("cuda") @ t2.to("cuda")
 
-    t1 = t1.to(dev)
-    t2 = t2.to(dev)
-    mark_dynamic(t1, [0, 1], [20, 10])
+    t1 = t1.to(XLA_DEVICE)
+    t2 = t2.to(XLA_DEVICE)
+    _mark_dynamic(t1, [0, 1], [20, 10])
     xla_out = t1 @ t2
     self.assertIn('<=20,<=10', torch_xla._XLAC._get_xla_tensors_text([xla_out]))
-    self.diff_output(torch_out.cpu(), xla_out)
+    self._diff_output(torch_out.cpu(), xla_out)
 
   def test_matmul_3(self):
     t1 = torch.randn([10, 3, 4]).to(torch.bfloat16)
     t2 = torch.randn([10, 4, 5]).to(torch.bfloat16)
     torch_out = t1.to("cuda") @ t2.to("cuda")
 
-    t1 = t1.to(dev)
-    t2 = t2.to(dev)
-    mark_dynamic(t1, [0, 1], [20, 10])
-    mark_dynamic(t2, [0], [20])
+    t1 = t1.to(XLA_DEVICE)
+    t2 = t2.to(XLA_DEVICE)
+    _mark_dynamic(t1, [0, 1], [20, 10])
+    _mark_dynamic(t2, [0], [20])
     xla_out = t1 @ t2
     self.assertIn('<=20,<=10,5',
                   torch_xla._XLAC._get_xla_tensors_text([xla_out]))
-    self.diff_output(torch_out, xla_out)
+    self._diff_output(torch_out, xla_out)
 
   def test_matmul_4(self):
     t1 = torch.randn([10, 3, 4]).to(torch.bfloat16)
     t2 = torch.randn([4, 5]).to(torch.bfloat16)
     torch_out = t1.to("cuda") @ t2.to("cuda")
 
-    t1 = t1.to(dev)
-    t2 = t2.to(dev)
-    mark_dynamic(t1, [0, 1], [20, 10])
+    t1 = t1.to(XLA_DEVICE)
+    t2 = t2.to(XLA_DEVICE)
+    _mark_dynamic(t1, [0, 1], [20, 10])
     xla_out = t1 @ t2
     self.assertIn('<=20,<=10,5',
                   torch_xla._XLAC._get_xla_tensors_text([xla_out]))
-    self.diff_output(torch_out, xla_out)
+    self._diff_output(torch_out, xla_out)
 
   def test_triu(self):
     t = torch.randn(4, 4)
     torch_out = torch.triu(t, diagonal=1)
 
-    t = t.to(dev)
-    mark_dynamic(t, [0, 1], [10, 10])
+    t = t.to(XLA_DEVICE)
+    _mark_dynamic(t, [0, 1], [10, 10])
     xla_out = torch.triu(t, diagonal=1)
 
     self.assertIn('<=10,<=10', torch_xla._XLAC._get_xla_tensors_text([xla_out]))
-    self.diff_output(torch_out, xla_out)
+    self._diff_output(torch_out, xla_out)
 
   def test_nll_loss_with_backward(self):
     logits = torch.randn(20, 30)
@@ -328,17 +303,18 @@ class TestBoundedDynamicOps(test_utils.XlaTestCase):
     torch_out.backward()
     torch_grad = logits.grad
 
-    logits = logits.detach().to(dev)
+    logits = logits.detach().to(XLA_DEVICE)
     logits.requires_grad = True
-    target = target.to(dev)
-    mark_dynamic(logits, [0], [50])
-    mark_dynamic(target, [0], [50])
+    target = target.to(XLA_DEVICE)
+    _mark_dynamic(logits, [0], [50])
+    _mark_dynamic(target, [0], [50])
     xla_out = F.nll_loss(logits, target)
     xla_out.backward()
     xla_grad = logits.grad
+    self.assertIn('<=50,30', torch_xla._XLAC._get_xla_tensors_text([xla_grad]))
 
-    self.diff_output(torch_out, xla_out)
-    self.diff_output(torch_grad, xla_grad)
+    self._diff_output(torch_out, xla_out)
+    self._diff_output(torch_grad, xla_grad)
 
 
 if __name__ == '__main__':
@@ -347,5 +323,5 @@ if __name__ == '__main__':
       'USE_BOUND_FOR_SHAPE_COMPARE', '1')
   test = unittest.main()
   # DISABLE PYTHON DISPATCHER FLAG
-  del pd
+  del PD
   sys.exit(0 if test.result.wasSuccessful() else 1)
