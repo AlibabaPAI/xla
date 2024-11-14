@@ -77,11 +77,11 @@ def setup_env():
     os.environ['PJRT_ALLOCATOR_FRACTION'] = orign_env
 
 
-@pytest.mark.parametrize("dtype", [torch.bfloat16])
-@pytest.mark.parametrize("mha_type", ["gqa"])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("mha_type", ["mha", "gqa", "mqa"])
 @pytest.mark.parametrize("deterministic", [True])
-@pytest.mark.parametrize("alibi", [True])
-@pytest.mark.parametrize("local", [True])
+@pytest.mark.parametrize("alibi", [False, True])
+@pytest.mark.parametrize("local", [False, True])
 @pytest.mark.parametrize("causal", [False, True])
 @pytest.mark.parametrize("d", [128])
 @pytest.mark.parametrize("softmax_scale", [0.25])

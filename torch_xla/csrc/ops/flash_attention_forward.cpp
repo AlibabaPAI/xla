@@ -24,7 +24,7 @@ xla::Shape NodeOutputShape(const torch::lazy::Value& q) {
       {q_shape[0], q_shape[2],
        q_shape[1]});  // batch_size, num_heads, seqlen_q(padding)
   xla::Shape rng_state_shape =
-      xla::ShapeUtil::MakeShape(xla::PrimitiveType::S64, {2});
+      xla::ShapeUtil::MakeShape(xla::PrimitiveType::U64, {2});
   return xla::ShapeUtil::MakeTupleShape(
       {softmax_lse_shape, shape_like(q), rng_state_shape});
 }
@@ -124,7 +124,7 @@ void custom_call_flash_attention_forward(cudaStream_t stream, void** buffers,
   cudaEventRecord(torch_wait_xla_event, stream);
   cudaStreamWaitEvent(torch_stream, torch_wait_xla_event);
 
-  auto cuda_stream = at::cuda::getDefaultCUDAStream();
+  auto cuda_stream = at::cuda::getCurrentCUDAStream();
   at::cuda::CUDAStreamGuard guard(cuda_stream);
 
   auto scalar_type = params.is_bf16 ? torch::kBFloat16 : torch::kFloat16;

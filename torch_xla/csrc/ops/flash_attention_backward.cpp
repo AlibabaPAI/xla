@@ -232,8 +232,8 @@ void custom_call_flash_attention_backward(cudaStream_t stream, void** buffers,
 
   launch_params.do_batch_stride = dq.stride(0);
   launch_params.dq_batch_stride = dq.stride(0);
-  launch_params.dk_batch_stride = dk.stride(0);
-  launch_params.dv_batch_stride = dv.stride(0);
+  launch_params.dk_batch_stride = dk_expanded.stride(0);
+  launch_params.dv_batch_stride = dv_expanded.stride(0);
 
   launch_params.dq_accum_ptr = loop ? dq_accum.data_ptr() : nullptr;
   launch_params.dk_accum_ptr = nullptr;

@@ -21,8 +21,8 @@ def setup_env():
     os.environ['PJRT_ALLOCATOR_FRACTION'] = orign_env
 
 
-@pytest.mark.parametrize("dtype", [torch.bfloat16])
-@pytest.mark.parametrize("mha_type", ["mha", "gqa"])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("mha_type", ["mha", "gqa", "mqa"])
 @pytest.mark.parametrize("deterministic", [True])
 @pytest.mark.parametrize("alibi", [False, True])
 @pytest.mark.parametrize("local", [False, True])
@@ -32,6 +32,7 @@ def setup_env():
 @pytest.mark.parametrize(
     "seqlen_q,seqlen_k",
     [
+        (118, 127),
         (128, 128),
         (2048, 2048),
     ],
@@ -131,13 +132,7 @@ def test_flash_attn_output(seqlen_q, seqlen_k, d, dropout_p, causal,
   out_xla = out_xla.cpu().detach()
 
   rng_state_xla = rng_state_xla.cpu().detach()
+  softmax_lse_xla = softmax_lse_xla.cpu().detach()
 
-  difference_out = torch.abs(out_xla - out_fa)
-  tolerance_out = 1e-3 + 1e-3 * torch.abs(out_fa)
-  mask_out = difference_out > tolerance_out
-  indices = mask_out.nonzero(as_tuple=False)
-  difference_s = torch.abs(softmax_lse - softmax_lse_xla)
-  tolerance_s = 1e-3 + 1e-3 * torch.abs(softmax_lse_xla)
-  mask_s = difference_s > tolerance_s
-  indices_s = mask_s.nonzero(as_tuple=False)
-  assert (indices_s.numel() < q.numel() * 1e-2)
+  assert torch.allclose(softmax_lse_xla, softmax_lse, rtol=1e-2, atol=1e-2)
+  assert torch.allclose(out_xla, out_fa, rtol=1e-2, atol=1e-2)

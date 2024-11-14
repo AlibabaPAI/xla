@@ -68,7 +68,7 @@ void custom_call_flash_attention_varlen_backward(cudaStream_t stream,
   cudaEventRecord(torch_wait_xla_event, stream);
   cudaStreamWaitEvent(torch_stream, torch_wait_xla_event);
 
-  auto cuda_stream = at::cuda::getDefaultCUDAStream();
+  auto cuda_stream = at::cuda::getCurrentCUDAStream();
   at::cuda::CUDAStreamGuard guard(cuda_stream);
 
   auto opts = torch::TensorOptions().dtype(scalar_type).device(torch::kCUDA);
