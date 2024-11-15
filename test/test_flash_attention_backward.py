@@ -30,8 +30,9 @@ def setup_env():
 @pytest.mark.parametrize(
     "seqlen_q,seqlen_k",
     [
+        (128, 113),
         (128, 128),
-        (1024, 1024),
+        (256, 256),
     ],
 )
 @pytest.mark.parametrize("dropout_p", [0.0])
@@ -43,7 +44,7 @@ def test_flash_attn_backward(seqlen_q, seqlen_k, d, dropout_p, causal, local,
   device = "cuda"
   # set seed
   torch.random.manual_seed(0)
-  batch_size = 2
+  batch_size = 4
   nheads = 9
   nheads_k = nheads if mha_type == "mha" else (1 if mha_type == "mqa" else 3)
 
@@ -153,8 +154,8 @@ def test_flash_attn_backward(seqlen_q, seqlen_k, d, dropout_p, causal, local,
   dv_xla = dv_xla.cpu().detach()
   softmax_d_xla = softmax_d_xla.cpu().detach()
 
-  assert torch.allclose(dq, dq_xla, rtol=1e-1, atol=1e-1, equal_nan=True)
-  assert torch.allclose(dk, dk_xla, rtol=1e-1, atol=1e-1, equal_nan=True)
-  assert torch.allclose(dv, dv_xla, rtol=1e-1, atol=1e-1, equal_nan=True)
+  assert torch.allclose(dq, dq_xla, rtol=1e-2, atol=1e-2, equal_nan=True)
+  assert torch.allclose(dk, dk_xla, rtol=1e-2, atol=1e-2, equal_nan=True)
+  assert torch.allclose(dv, dv_xla, rtol=1e-2, atol=1e-2, equal_nan=True)
   assert torch.allclose(
-      softmax_d, softmax_d_xla, rtol=1e-1, atol=1e-1, equal_nan=True)
+      softmax_d, softmax_d_xla, rtol=1e-2, atol=1e-2, equal_nan=True)

@@ -92,12 +92,9 @@ void custom_call_flash_attention_varlen_forward(cudaStream_t stream,
       torch::from_blob(buffers[8 + buf_offset], {params.b + 1}, opts);
   at::Tensor rng_state =
       torch::from_blob(buffers[6 + buf_offset], {2}, opts.dtype(torch::kInt64));
-  cudaMemsetAsync(rng_state.data_ptr(), 0, 2 * sizeof(int64_t), cuda_stream);
   softmax_lse.fill_(0);
   o_output.fill_(0);
   cu_seqlens_k.fill_(0);
-  // cudaMemsetAsync(buffers[8 + buf_offset], 0, (params.b + 1) *
-  // sizeof(int32_t), cuda_stream);
 
   int max_seqlen_in_batch_k = params.seqlen_k;
   int total_k = params.b * params.seqlen_k;

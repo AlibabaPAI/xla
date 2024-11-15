@@ -23,8 +23,8 @@ def _get_unpad_data(attention_mask):
   )
 
 
-def _upad_input(query_layer, key_layer, value_layer, attention_mask,
-                query_length, n_heads):
+def _unpad_input(query_layer, key_layer, value_layer, attention_mask,
+                 query_length, n_heads):
   indices_k, cu_seqlens_k, max_seqlen_in_batch_k = _get_unpad_data(
       attention_mask)
   batch_size, kv_seq_len, num_key_value_heads, head_dim = key_layer.shape  # b, s, h, d
@@ -57,9 +57,9 @@ def _upad_input(query_layer, key_layer, value_layer, attention_mask,
         query_layer, attention_mask)
 
   return (
-      query_layer,  # (b*s, h, d), b*s is the true data
-      key_layer,  # (b*s, h, d)
-      value_layer,  # (b*s, h, d)
+      query_layer,
+      key_layer,
+      value_layer,
       indices_q,
       (cu_seqlens_q, cu_seqlens_k),
       (max_seqlen_in_batch_q, max_seqlen_in_batch_k),
@@ -78,12 +78,12 @@ def setup_env():
 
 
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-@pytest.mark.parametrize("mha_type", ["mha", "gqa", "mqa"])
+@pytest.mark.parametrize("mha_type", ["mha", "mqa", "gqa"])
 @pytest.mark.parametrize("deterministic", [True])
 @pytest.mark.parametrize("alibi", [False, True])
 @pytest.mark.parametrize("local", [False, True])
 @pytest.mark.parametrize("causal", [False, True])
-@pytest.mark.parametrize("d", [128])
+@pytest.mark.parametrize("d", [32])
 @pytest.mark.parametrize("softmax_scale", [0.25])
 @pytest.mark.parametrize(
     "seqlen_q,seqlen_k",
@@ -97,6 +97,9 @@ def setup_env():
 def test_flash_attn_output(seqlen_q, seqlen_k, d, dropout_p, causal,
                            softmax_scale, local, alibi, deterministic, mha_type,
                            dtype):
+  # (TODO: wenting.swt) When run all test cases together, some cases show a precision
+  # difference > 1e-2 at a few positions; however, these cases can run successfully
+  # when run individually. The cause of this issue needs to be identified.
   if d % 8 != 0:
     pytest.skip(reason="Expected head_size_og % 8 == 0 to be true")
 
@@ -147,7 +150,7 @@ def test_flash_attn_output(seqlen_q, seqlen_k, d, dropout_p, causal,
     q[i, k_len:, :, :] = 0
     k[i, k_len:, :, :] = 0
     v[i, k_len:, :, :] = 0
-  q_cuda, k_cuda, v_cuda, indices_q, cu_seq_lens, max_seq_lens = _upad_input(
+  q_cuda, k_cuda, v_cuda, indices_q, cu_seq_lens, max_seq_lens = _unpad_input(
       q, k, v, attention_mask, seqlen_q, nheads)
   cu_seqlens_q, cu_seqlens_k = cu_seq_lens
   max_seqlen_in_batch_q, max_seqlen_in_batch_k = max_seq_lens
@@ -222,3 +225,7 @@ def test_flash_attn_output(seqlen_q, seqlen_k, d, dropout_p, causal,
       cu_seqlen_q_xla, cu_seqlens_q, rtol=1e-3, atol=1e-3, equal_nan=True)
   assert torch.allclose(
       cu_seqlen_k_xla, cu_seqlens_k, rtol=1e-3, atol=1e-3, equal_nan=True)
+  softmax_lse_xla = softmax_lse_xla[:, :, :max_seqlen_in_batch_q]
+  softmax_lse = softmax_lse[:, :, :max_seqlen_in_batch_q]
+  assert torch.allclose(
+      softmax_lse_xla, softmax_lse, rtol=1e-2, atol=1e-2, equal_nan=True)

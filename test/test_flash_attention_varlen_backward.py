@@ -24,8 +24,8 @@ def _get_unpad_data(attention_mask):
   )
 
 
-def _upad_input(query_layer, key_layer, value_layer, do_layer, dq_layer,
-                dk_layer, dv_layer, attention_mask, query_length, n_heads):
+def _unpad_input(query_layer, key_layer, value_layer, do_layer, dq_layer,
+                 dk_layer, dv_layer, attention_mask, query_length, n_heads):
   indices_k, cu_seqlens_k, max_seqlen_in_batch_k = _get_unpad_data(
       attention_mask)
   batch_size, kv_seq_len, num_key_value_heads, head_dim = key_layer.shape  # b, s, h, d
@@ -154,7 +154,7 @@ def test_flash_attn_varlen_backward(seqlen_q, seqlen_k, d, dropout_p, causal,
   v.requires_grad = True
 
   q_cuda, k_cuda, v_cuda, do_cuda, dq_cuda, dk_cuda, dv_cuda, \
-  indices_q, indices_k, cu_seq_lens, max_seq_lens = _upad_input(
+  indices_q, indices_k, cu_seq_lens, max_seq_lens = _unpad_input(
       q, k, v, do, dq, dk, dv, attention_mask, seqlen_q, nheads
   )
   cu_seqlens_q, cu_seqlens_k = cu_seq_lens

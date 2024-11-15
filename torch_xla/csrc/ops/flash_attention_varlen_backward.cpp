@@ -110,14 +110,6 @@ void custom_call_flash_attention_varlen_backward(cudaStream_t stream,
       opts.dtype(torch::kFloat));
 
   // Fill zeros for outputs.
-  // cudaMemsetAsync(buffers[9 + buf_offset], 0,params.b * params.seqlen_q *
-  // params.h * params.d * sizeof(scalar_type), cuda_stream);
-  // cudaMemsetAsync(buffers[10 + buf_offset], 0, params.b * params.seqlen_q *
-  // params.h * params.d * sizeof(scalar_type), cuda_stream);
-  // cudaMemsetAsync(buffers[11 + buf_offset], 0, params.b * params.seqlen_q *
-  // params.h * params.d * sizeof(scalar_type), cuda_stream);
-  // cudaMemsetAsync(buffers[12 + buf_offset], 0, params.b * params.seqlen_q *
-  // params.h * sizeof(torch::kFloat), cuda_stream);
   dq.fill_(0);
   dk.fill_(0);
   dv.fill_(0);
