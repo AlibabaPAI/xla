@@ -92,11 +92,6 @@ void custom_call_flash_attention_varlen_forward(cudaStream_t stream,
       torch::from_blob(buffers[8 + buf_offset], {params.b + 1}, opts);
   at::Tensor rng_state =
       torch::from_blob(buffers[6 + buf_offset], {2}, opts.dtype(torch::kInt64));
-  // Fill zeros for outputs.
-  // cudaMemsetAsync(buffers[4 + buf_offset], 0, params.b * params.h *
-  // params.seqlen_q * sizeof(torch::kFloat), cuda_stream);
-  // cudaMemsetAsync(buffers[5 + buf_offset], 0, params.b * params.seqlen_q *
-  // params.h * params.d * sizeof(scalar_type), cuda_stream);
   cudaMemsetAsync(rng_state.data_ptr(), 0, 2 * sizeof(int64_t), cuda_stream);
   softmax_lse.fill_(0);
   o_output.fill_(0);
@@ -154,8 +149,6 @@ void custom_call_flash_attention_varlen_forward(cudaStream_t stream,
   // Otherwise the kernel will be launched from cuda:0 device
   // Cast to char to avoid compiler warning about narrowing
   at::cuda::CUDAGuard device_guard{(char)q.get_device()};
-
-  auto dprops = at::cuda::getCurrentDeviceProperties();
 
   Flash_fwd_params launch_params;
 
