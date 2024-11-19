@@ -234,7 +234,7 @@ void custom_call_flash_attention_forward(cudaStream_t stream, void** buffers,
   // kernel. In any case we don't expect seqlen_q to be larger than 64 for
   // inference.
   const int num_m_blocks = (params.seqlen_q + 64 - 1) / 64;
-  launch_params.num_splits = 0;
+  launch_params.num_splits = params.num_splits;
   if (params.p_dropout == 1.0f) {  // SplitKV is not implemented for dropout
     if (launch_params.num_splits < 1) {
       auto dprops = at::cuda::getCurrentDeviceProperties();
@@ -242,15 +242,17 @@ void custom_call_flash_attention_forward(cudaStream_t stream, void** buffers,
           num_splits_heuristic(params.b * params.h * num_m_blocks,
                                dprops->multiProcessorCount, num_n_blocks, 128);
     }
-    if (launch_params.num_splits > 1) {
-      at::Tensor softmax_lse_accum =
-          torch::empty({launch_params.num_splits, params.b, params.h,
+  }
+  const int num_splits = launch_params.num_splits == 0 ? 1: launch_params.num_splits;
+  at::Tensor softmax_lse_accum = torch::empty({num_splits, params.b, params.h,
                         launch_params.seqlen_q},
                        opts.dtype(at::kFloat));
-      at::Tensor out_accum =
-          torch::empty({params.num_splits, params.b, params.h,
+  at::Tensor out_accum =
+          torch::empty({num_splits, params.b, params.h,
                         launch_params.seqlen_q, launch_params.d_rounded},
                        opts.dtype(at::kFloat));
+  if (fabs(1 - params.p_dropout) < 1e-6) {  // SplitKV is not implemented for dropout
+    if (launch_params.num_splits > 1) {
       launch_params.softmax_lseaccum_ptr = softmax_lse_accum.data_ptr();
       launch_params.oaccum_ptr = out_accum.data_ptr();
     }
@@ -281,8 +283,11 @@ void custom_call_flash_attention_forward(cudaStream_t stream, void** buffers,
 
   FP16_SWITCH(!launch_params.is_bf16, [&] {
     HEADDIM_SWITCH(launch_params.d, [&] {
-      // TODO(wenting.swt): support split_kv
-      run_mha_fwd_<elem_type, kHeadDim>(launch_params, torch_stream);
+      if (launch_params.num_splits <= 1) {
+        run_mha_fwd_<elem_type, kHeadDim>(launch_params, torch_stream);
+      } else {
+          run_mha_fwd_splitkv_dispatch<elem_type, kHeadDim>(launch_params, torch_stream);
+      }
     });
   });
 
