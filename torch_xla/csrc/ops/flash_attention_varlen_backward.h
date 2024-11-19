@@ -1,23 +1,27 @@
-#ifndef XLA_TORCH_XLA_CSRC_OPS_FLASH_ATTENTION_BACKWARD_H_
-#define XLA_TORCH_XLA_CSRC_OPS_FLASH_ATTENTION_BACKWARD_H_
+#ifndef XLA_TORCH_XLA_CSRC_OPS_FLASH_ATTENTION_VARLEN_BACKWARD_H_
+#define XLA_TORCH_XLA_CSRC_OPS_FLASH_ATTENTION_VARLEN_BACKWARD_H_
 
 #include "torch_xla/csrc/flash_attention_utils.h"
 #include "torch_xla/csrc/ir.h"
 
 namespace torch_xla {
 
-class FlashAttentionBackward : public XlaNode {
+class FlashAttentionVarlenBackward : public XlaNode {
  public:
-  FlashAttentionBackward(
+  FlashAttentionVarlenBackward(
       const torch::lazy::Value& dout, const torch::lazy::Value& q,
       const torch::lazy::Value& k, const torch::lazy::Value& v,
       const torch::lazy::Value& out, const torch::lazy::Value& softmax_lse,
+      const torch::lazy::Value& cu_seqlens_q,
+      const torch::lazy::Value& cu_seqlens_k,
       const torch::lazy::Value& rng_state, const std::string params);
 
-  FlashAttentionBackward(
+  FlashAttentionVarlenBackward(
       const torch::lazy::Value& dout, const torch::lazy::Value& q,
       const torch::lazy::Value& k, const torch::lazy::Value& v,
       const torch::lazy::Value& out, const torch::lazy::Value& softmax_lse,
+      const torch::lazy::Value& cu_seqlens_q,
+      const torch::lazy::Value& cu_seqlens_k,
       const torch::lazy::Value& rng_state,
       const torch::lazy::Value& alibi_slopes, const std::string params);
 
@@ -31,4 +35,4 @@ class FlashAttentionBackward : public XlaNode {
 
 }  // namespace torch_xla
 
-#endif  // XLA_TORCH_XLA_CSRC_OPS_FLASH_ATTENTION_BACKWARD_H_
+#endif  // XLA_TORCH_XLA_CSRC_OPS_FLASH_ATTENTION_VARLEN_BACKWARD_H_

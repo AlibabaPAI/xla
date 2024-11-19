@@ -10,25 +10,20 @@ class FlashAttentionForward : public XlaNode {
  public:
   FlashAttentionForward(const torch::lazy::Value& q,
                         const torch::lazy::Value& k,
-                        const torch::lazy::Value& v,
-                        const torch::lazy::Value& cu_seqlens_q,
-                        const torch::lazy::Value& cu_seqlens_k,
-                        const FlashAttentionForwardParams& params);
+                        const torch::lazy::Value& v, const std::string params);
 
   FlashAttentionForward(const torch::lazy::Value& q,
                         const torch::lazy::Value& k,
                         const torch::lazy::Value& v,
-                        const torch::lazy::Value& cu_seqlens_q,
-                        const torch::lazy::Value& cu_seqlens_k,
                         const torch::lazy::Value& alibi_slopes,
-                        const FlashAttentionForwardParams& params);
+                        const std::string params);
 
   torch::lazy::NodePtr Clone(torch::lazy::OpList operands) const override;
 
   XlaOpVector Lower(LoweringContext* loctx) const override;
 
  private:
-  FlashAttentionForwardParams params_;
+  const std::string params_;
 };
 
 }  // namespace torch_xla
