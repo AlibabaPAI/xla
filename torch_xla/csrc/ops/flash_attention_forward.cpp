@@ -250,7 +250,6 @@ void custom_call_flash_attention_forward(cudaStream_t stream, void** buffers,
       torch::from_blob(buffers[5 + buf_offset], {2}, opts.dtype(torch::kInt64));
   // Forward kernel will populate memory with the seed and offset.
   launch_params.rng_state = reinterpret_cast<uint64_t*>(rng_state.data_ptr());
-  cudaMemsetAsync(rng_state.data_ptr(), 0, 2 * sizeof(int64_t), cuda_stream);
 
   if ((1.f - launch_params.p_dropout) > 0.0) {
     // number of times random will be generated per thread, to offset philox
