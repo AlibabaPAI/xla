@@ -243,15 +243,17 @@ void custom_call_flash_attention_forward(cudaStream_t stream, void** buffers,
                                dprops->multiProcessorCount, num_n_blocks, 128);
     }
   }
-  const int num_splits = launch_params.num_splits == 0 ? 1: launch_params.num_splits;
-  at::Tensor softmax_lse_accum = torch::empty({num_splits, params.b, params.h,
-                        launch_params.seqlen_q},
-                       opts.dtype(at::kFloat));
+  const int num_splits =
+      launch_params.num_splits == 0 ? 1 : launch_params.num_splits;
+  at::Tensor softmax_lse_accum =
+      torch::empty({num_splits, params.b, params.h, launch_params.seqlen_q},
+                   opts.dtype(at::kFloat));
   at::Tensor out_accum =
-          torch::empty({num_splits, params.b, params.h,
-                        launch_params.seqlen_q, launch_params.d_rounded},
-                       opts.dtype(at::kFloat));
-  if (fabs(1 - params.p_dropout) < 1e-6) {  // SplitKV is not implemented for dropout
+      torch::empty({num_splits, params.b, params.h, launch_params.seqlen_q,
+                    launch_params.d_rounded},
+                   opts.dtype(at::kFloat));
+  if (fabs(1 - params.p_dropout) <
+      1e-6) {  // SplitKV is not implemented for dropout
     if (launch_params.num_splits > 1) {
       launch_params.softmax_lseaccum_ptr = softmax_lse_accum.data_ptr();
       launch_params.oaccum_ptr = out_accum.data_ptr();
@@ -286,7 +288,8 @@ void custom_call_flash_attention_forward(cudaStream_t stream, void** buffers,
       if (launch_params.num_splits <= 1) {
         run_mha_fwd_<elem_type, kHeadDim>(launch_params, torch_stream);
       } else {
-          run_mha_fwd_splitkv_dispatch<elem_type, kHeadDim>(launch_params, torch_stream);
+        run_mha_fwd_splitkv_dispatch<elem_type, kHeadDim>(launch_params,
+                                                          torch_stream);
       }
     });
   });
