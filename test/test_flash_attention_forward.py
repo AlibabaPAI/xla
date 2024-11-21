@@ -27,7 +27,7 @@ def setup_env():
 @pytest.mark.parametrize("alibi", [False, True])
 @pytest.mark.parametrize("local", [False, True])
 @pytest.mark.parametrize("causal", [False, True])
-@pytest.mark.parametrize("d", [8])
+@pytest.mark.parametrize("d", [256])
 @pytest.mark.parametrize("softmax_scale", [0.25])
 @pytest.mark.parametrize(
     "seqlen_q,seqlen_k",
