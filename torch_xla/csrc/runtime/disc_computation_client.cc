@@ -138,8 +138,6 @@ std::vector<ComputationClient::DataPtr> DISCComputationClient::TransferToDevice(
     auto dtype =
         at::TensorOptions(TorchTypeFromXlaType(tensor->shape().element_type()));
     auto ret = at::empty(sizes, dtype).contiguous();
-    // tensor->populate_fn(tensor, ret.data_ptr(),
-    //                    ret.element_size() * ret.numel());
     std::memcpy(ret.data_ptr(), tensor->data(),
                 ret.element_size() * ret.numel());
 
@@ -407,6 +405,7 @@ size_t DISCComputationClient::GetNumDevices() const { return world_size_; }
 int DISCComputationClient::GetProcessIndex() const { return local_rank_; }
 
 int DISCComputationClient::GetNumProcesses() const { return world_size_; }
+
 std::string DISCComputationClient::SerializeComputation(
     const ComputationPtr computation) {
   auto client = dynamic_cast<DISCComputation*>(computation.get());
@@ -428,7 +427,8 @@ std::string DISCComputationClient::SerializeComputation(
   for (auto device : computation->devices()) {
     result_pb.add_devices(device);
   }
-  return hlo_proto.SerializeAsString() + ":::" + result_pb.SerializeAsString();
+  return absl::StrCat(hlo_proto.SerializeAsString(),
+                      ":::", result_pb.SerializeAsString());
 }
 ComputationClient::ComputationPtr DISCComputationClient::DeserializeComputation(
     const std::string& serialized) {
