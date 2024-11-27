@@ -1,3 +1,4 @@
+load("@com_google_protobuf//:protobuf.bzl", "cc_proto_library")
 load(
     "@tsl//tsl/platform/default:cuda_build_defs.bzl",
     "if_cuda_is_configured",
@@ -37,7 +38,12 @@ ptxla_cc_library(
         "-DGOOGLE_CUDA",
     ]
 )
-
+cc_proto_library(
+    name = "disc_compiler_result_proto",
+    srcs = [
+        "compile_result.proto",
+    ],
+)
 ptxla_cc_library(
     name = "disc_utils",
     srcs = ["disc_utils.cc"],
@@ -58,6 +64,7 @@ ptxla_cc_library(
     deps = [
         ":disc_ral",
         ":disc_utils",
+        ":disc_compiler_result_proto",
         "//torch_xla/csrc/runtime:tf_logging",
         "//torch_xla/csrc/runtime:sys_util",
         "//torch_xla/csrc/runtime:env_vars",
@@ -79,3 +86,4 @@ ptxla_cc_test(
         "@tsl//tsl/platform:test_main",
     ]
 )
+

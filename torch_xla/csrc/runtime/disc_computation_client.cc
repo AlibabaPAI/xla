@@ -16,10 +16,12 @@
 #include "mlir/IR/Operation.h"         // from @llvm-project
 #include "mlir/Pass/Pass.h"            // from @llvm-project
 #include "torch_xla/csrc/runtime/computation_client.h"
+#include "torch_xla/csrc/runtime/disc/compile_result.pb.h"
 #include "torch_xla/csrc/runtime/disc/disc_compile.h"
 #include "torch_xla/csrc/runtime/env_vars.h"
 #include "torch_xla/csrc/runtime/stablehlo_helper.h"
 #include "torch_xla/csrc/runtime/sys_util.h"
+#include "xla/client/xla_computation.h"
 #include "xla/hlo/ir/hlo_module.h"
 #include "xla/service/float_normalization.h"
 #include "xla/service/gpu/gpu_float_support.h"
@@ -136,8 +138,6 @@ std::vector<ComputationClient::DataPtr> DISCComputationClient::TransferToDevice(
     auto dtype =
         at::TensorOptions(TorchTypeFromXlaType(tensor->shape().element_type()));
     auto ret = at::empty(sizes, dtype).contiguous();
-    // tensor->populate_fn(tensor, ret.data_ptr(),
-    //                    ret.element_size() * ret.numel());
     std::memcpy(ret.data_ptr(), tensor->data(),
                 ret.element_size() * ret.numel());
 
@@ -405,6 +405,73 @@ size_t DISCComputationClient::GetNumDevices() const { return world_size_; }
 int DISCComputationClient::GetProcessIndex() const { return local_rank_; }
 
 int DISCComputationClient::GetNumProcesses() const { return world_size_; }
+
+std::string DISCComputationClient::SerializeComputation(
+    const ComputationPtr computation) {
+  auto client = dynamic_cast<DISCComputation*>(computation.get());
+  auto hlo_proto = client->computation().proto();
+  auto result = client->executable->GetDiscResult();
+  torch_xla::runtime::disc::DISCCompileResult result_pb;
+  result_pb.set_ral_library(result.ral_lib);
+  result_pb.set_ral_meta_pb(result.ral_mate_pb);
+  for (const auto& input : result.inputs) {
+    auto data_meta = result_pb.add_input_specs();
+    data_meta->set_device(input.device);
+    data_meta->set_dtype(static_cast<int>(input.scalar_type));
+  }
+  for (const auto& output : result.outputs) {
+    auto data_meta = result_pb.add_output_specs();
+    data_meta->set_device(output.device);
+    data_meta->set_dtype(static_cast<int>(output.scalar_type));
+  }
+  for (auto device : computation->devices()) {
+    result_pb.add_devices(device);
+  }
+  return absl::StrCat(hlo_proto.SerializeAsString(),
+                      ":::", result_pb.SerializeAsString());
+}
+ComputationClient::ComputationPtr DISCComputationClient::DeserializeComputation(
+    const std::string& serialized) {
+  std::vector<std::string> parts = absl::StrSplit(serialized, ":::");
+  if (parts.size() != 2) {
+    XLA_ERROR() << "Invalid serialized computation, should have 2 parts with "
+                   "separator ':::', got "
+                << parts.size();
+  }
+  if (parts[1].size() > std::numeric_limits<int>::max()) {
+    XLA_ERROR() << "Serialized DISCCompileResult proto too large (>2GB)\n";
+  }
+  xla::HloModuleProto hlo_proto;
+  disc::DISCCompileResult result_proto;
+  hlo_proto.ParseFromString(parts[0]);
+  result_proto.ParseFromString(parts[1]);
+
+  disc::DISCComplationResult compile_result;
+  compile_result.ral_lib = result_proto.ral_library();
+  compile_result.ral_mate_pb = result_proto.ral_meta_pb();
+  for (const auto& input : result_proto.input_specs()) {
+    disc::DataMeta data_meta;
+    data_meta.device = input.device();
+    data_meta.scalar_type = static_cast<at::ScalarType>(input.dtype());
+    compile_result.inputs.push_back(data_meta);
+  }
+  for (const auto& output : result_proto.output_specs()) {
+    disc::DataMeta data_meta;
+    data_meta.device = output.device();
+    data_meta.scalar_type = static_cast<at::ScalarType>(output.dtype());
+    compile_result.outputs.push_back(data_meta);
+  }
+  std::vector<std::string> devices;
+  for (const auto& device : result_proto.devices()) {
+    devices.push_back(device);
+  }
+
+  auto ral_context = std::make_unique<disc::RalContext>(compile_result);
+  auto computation = std::make_shared<DISCComputation>(
+      std::move(xla::XlaComputation(hlo_proto)), devices,
+      std::move(ral_context));
+  return computation;
+}
 
 }  // namespace runtime
 }  // namespace torch_xla

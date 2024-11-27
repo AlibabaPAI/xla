@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package torch_xla.runtime.disc;
+
+option cc_enable_arenas = true;
+
+message DataSpec {
+  string device = 1;
+  int32 dtype = 2;
+}
+message DISCCompileResult {
+  bytes ral_library = 1;
+  bytes ral_meta_pb = 2;
+  repeated DataSpec input_specs = 3;
+  repeated DataSpec output_specs = 4;
+  repeated string devices = 5;
+}

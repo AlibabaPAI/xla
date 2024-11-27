@@ -11,6 +11,8 @@ namespace runtime {
 
 class DISCComputationClient : public ComputationClient {
  public:
+  const std::string DefaultDevicePrefix = "CUDA:";
+
   DISCComputationClient();
   ~DISCComputationClient();
 
@@ -55,15 +57,10 @@ class DISCComputationClient : public ComputationClient {
     XLA_ERROR() << __FUNCTION__ << " not implemented";
   }
 
-  std::string SerializeComputation(const ComputationPtr computation) override {
-    XLA_ERROR() << __FUNCTION__ << " not implemented";
-  }
+  std::string SerializeComputation(const ComputationPtr computation) override;
 
-  ComputationPtr DeserializeComputation(
-      const std::string& serialized) override {
-    XLA_ERROR() << __FUNCTION__ << " not implemented";
-  }
-
+  ComputationClient::ComputationPtr DeserializeComputation(
+      const std::string& serialized) override;
   torch::lazy::hash_t HashCompilationEnv() override {
     // TODO(wangang.wa): Improve this function.
     return torch::lazy::hash_t();

@@ -33,6 +33,7 @@ class RalContext {
   ~RalContext();
 
   std::vector<at::Tensor> Execute(const std::vector<at::Tensor>& inputs);
+  DISCComplationResult GetDiscResult() { return disc_result_; }
 
  private:
   void BindingInputs(const std::vector<at::Tensor>& inputs,
