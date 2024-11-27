@@ -25,12 +25,12 @@ cc_library(
 
 cc_import(
     name="disc_ral_cuda",
-    shared_library = "build/libral_base_context.so",
+    shared_library = ":libral_base_context.so",
 )
 
 cc_import(
     name="disc_custom_op",
-    shared_library = "build/libdisc_custom_ops.so",
+    shared_library = ":libdisc_custom_ops.so",
 )
 
 genrule(
