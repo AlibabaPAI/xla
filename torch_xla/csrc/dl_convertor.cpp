@@ -30,6 +30,15 @@ struct DLPackTensor {
   DLManagedTensor tensor;
 };
 
+struct DLPackTensorAlias {
+  ~DLPackTensorAlias() {}
+  XLATensorPtr reference;
+
+  std::vector<int64_t> shape;
+  std::vector<int64_t> strides;
+  DLManagedTensor tensor;
+};
+
 DLPackTensor::~DLPackTensor() {
   if (external_reference) {
     external_reference.reset(nullptr);
@@ -39,6 +48,12 @@ DLPackTensor::~DLPackTensor() {
 void DLPackTensorDeleter(DLManagedTensor* t) {
   if (t) {
     delete static_cast<DLPackTensor*>(t->manager_ctx);
+  }
+}
+
+void DLPackTensorAliasDeleter(DLManagedTensor* t) {
+  if (t) {
+    delete static_cast<DLPackTensorAlias*>(t->manager_ctx);
   }
 }
 
@@ -145,6 +160,45 @@ DLManagedTensor* toDLPack(const at::Tensor& input) {
   dt.data = pack->external_reference->OpaqueDeviceMemoryDataPointer();
   pack->tensor.manager_ctx = pack.get();
   pack->tensor.deleter = DLPackTensorDeleter;
+  dt.device = DLDeviceForDevice(*pjrt_buffer->device());
+  dt.device.device_id = pjrt_buffer->device()->local_hardware_id();
+  dt.ndim = pjrt_buffer->dimensions().size();
+  dt.dtype = PrimitiveTypeToDLDataType(pjrt_buffer->element_type());
+
+  pack->shape = std::vector<int64_t>(pjrt_buffer->dimensions().begin(),
+                                     pjrt_buffer->dimensions().end());
+  xla::Layout xla_layout = xla::GetXlaLayoutUnsafe(pjrt_buffer->layout());
+  pack->strides = StridesForShape(pjrt_buffer->element_type(),
+                                  pjrt_buffer->dimensions(), xla_layout);
+  dt.shape = reinterpret_cast<std::int64_t*>(pack->shape.data());
+  dt.strides = reinterpret_cast<std::int64_t*>(pack->strides.data());
+  dt.byte_offset = 0;
+
+  return &(pack.release()->tensor);
+}
+
+// convert an XLA tensor to a dlpack tensor
+DLManagedTensor* toDLPackAlias(const at::Tensor& input,
+                               const at::Tensor& result, int64_t address) {
+  void* data = reinterpret_cast<void*>(address);
+
+  auto pack = std::make_unique<DLPackTensorAlias>();
+  DLTensor& dt = pack->tensor.dl_tensor;
+
+  std::shared_ptr<runtime::ComputationClient::Data> handle =
+      get_data_handle(input);
+  XLATensorPtr xla_tensor_ptr = bridge::TryGetXlaTensor(result);
+  pack->reference = xla_tensor_ptr;
+  XLA_CHECK(handle != nullptr)
+      << "Could not extract a valid data handle from the input tensor";
+
+  std::shared_ptr<xla::PjRtBuffer> pjrt_buffer =
+      runtime::GetComputationClient()->GetPjRtBuffer(handle);
+  XLA_CHECK(pjrt_buffer != nullptr) << "Could not get a valid pjrt_buffer";
+
+  dt.data = data;
+  pack->tensor.manager_ctx = pack.get();
+  pack->tensor.deleter = DLPackTensorAliasDeleter;
   dt.device = DLDeviceForDevice(*pjrt_buffer->device());
   dt.device.device_id = pjrt_buffer->device()->local_hardware_id();
   dt.ndim = pjrt_buffer->dimensions().size();

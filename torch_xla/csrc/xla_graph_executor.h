@@ -32,6 +32,25 @@ namespace torch_xla {
 class XLAGraphExecutor : public torch::lazy::LazyGraphExecutor {
  public:
   static XLAGraphExecutor* Get();
+  // Locking:
+  // We perform LaunchLock to ensure the correct order of kernel launch between
+  // graph execution and eager execution in the Scenario of dynamo + xla
+  // backend.
+  class LaunchLocker {
+   public:
+    static LaunchLocker* Get();
+    explicit LaunchLocker() {}
+
+    void Lock();
+    void Unlock();
+    void Barrier();
+    void WaitUntilCanLock();
+
+   private:
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    bool locked_ = false;
+  };
 
   // Override to use our own DeviceContextArena.
   void RegisterTensor(
@@ -100,6 +119,8 @@ class XLAGraphExecutor : public torch::lazy::LazyGraphExecutor {
 
   bool GetAliasWithBufferDonorConfig();
 
+  std::vector<int64_t> GetAliasInfo(torch::lazy::hash_t hash, int64_t input_num,
+                                    int64_t output_num);
   // Dumps the XLA HLO text of the computation accumulated in the graph which is
   // attached the tensors.
   // We don't use upstream DumpBackendComputation given we have our own format.

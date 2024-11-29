@@ -219,6 +219,34 @@ torch::lazy::Value XLAGraphExecutor::DeviceContextArena::IrValueFromScalar(
   return torch::lazy::MakeNode<DeviceData>(std::move(device_data));
 }
 
+void XLAGraphExecutor::LaunchLocker::Lock() {
+  std::unique_lock<std::mutex> lock(mutex_);
+  cv_.wait(lock, [this] { return !locked_; });
+  locked_ = true;
+}
+
+void XLAGraphExecutor::LaunchLocker::Unlock() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  locked_ = false;
+  cv_.notify_all();
+}
+
+void XLAGraphExecutor::LaunchLocker::WaitUntilCanLock() {
+  std::unique_lock<std::mutex> lock(mutex_);
+  cv_.wait(lock, [this] { return !locked_; });
+}
+
+void XLAGraphExecutor::LaunchLocker::Barrier() {
+  std::unique_lock<std::mutex> lock(mutex_);
+  cv_.wait(lock, [this] { return !locked_; });
+  cv_.notify_all();
+}
+
+auto XLAGraphExecutor::LaunchLocker::Get() -> LaunchLocker* {
+  static LaunchLocker* lock = new LaunchLocker();
+  return lock;
+}
+
 XLAGraphExecutor::Async::Async(
     SyncTensorCollection* coll,
     std::vector<torch::lazy::BackendDataPtr> parameters_data,
@@ -352,6 +380,15 @@ void XLAGraphExecutor::SetAliasWithBufferDonorConfig(bool should_alias) {
 
 bool XLAGraphExecutor::GetAliasWithBufferDonorConfig() {
   return DeviceContextArena::Get()->GetAliasWithBufferDonorConfig();
+}
+std::vector<int64_t> XLAGraphExecutor::GetAliasInfo(torch::lazy::hash_t hash,
+                                                    int64_t input_num,
+                                                    int64_t output_num) {
+  auto cachedComputation =
+      XLAGraphExecutor::Get()->GetComputationCache()->Get(hash);
+  auto pjrt_client = runtime::GetComputationClient();
+  return pjrt_client->GetAliasInfo(cachedComputation->computation, input_num,
+                                   output_num);
 }
 
 std::string XLAGraphExecutor::DumpHloComputation(
@@ -820,6 +857,9 @@ XLAGraphExecutor::ExecuteComputationWithBarrier(
                    << async->device << " done!";
       }
 
+      LaunchLocker::Get()->Unlock();
+      // block the stream;
+      runtime::GetComputationClient()->WaitCudaStreamForDevice(async->device);
       // Updating placeholder with actual output handle.
       {
         tsl::profiler::TraceMe activity("update_placeholder",
@@ -846,6 +886,8 @@ XLAGraphExecutor::ExecuteComputationWithBarrier(
     }
   };
 
+  // Lock before async
+  LaunchLocker::Get()->Lock();
   thread::Schedule(async->mwait.Completer(std::move(syncfn)));
 
   return placeholders;

@@ -9,6 +9,8 @@ import torch_xla.utils.utils as xu
 def to_dlpack(xla_tensor: Any):
   return torch_xla._XLAC._to_dlpack(xla_tensor)
 
+def to_dlpack_alias(xla_tensor_input: Any, xla_tensor_result, data_pointer):
+  return torch_xla._XLAC._to_dlpack_alias(xla_tensor_input, xla_tensor_result, data_pointer)
 
 def from_dlpack(ext_tensor: Any):
   if hasattr(ext_tensor, '__dlpack_device__') and hasattr(
@@ -51,3 +53,15 @@ def from_xla_cuda_to_cuda(tensor):
   dlpack = to_dlpack(tensor)
   cuda_tensor = torch.utils.dlpack.from_dlpack(dlpack)
   return cuda_tensor
+
+def from_xla_cuda_to_cuda_alias(input_tensor, result_tensor, data_pointer):
+  assert torch.cuda.is_available()
+  assert result_tensor.device.type == "xla", "The tensor is not an XLA tensor"
+  is_xla_cuda = True if xu.getenv_as("PJRT_DEVICE", str,
+                                     "").lower() == "cuda" else False
+  assert is_xla_cuda, "The XLA tensor is not on CUDA"
+  
+  dlpack = to_dlpack_alias(input_tensor, result_tensor, data_pointer)
+  cuda_tensor = torch.utils.dlpack.from_dlpack(dlpack)
+  return cuda_tensor
+  

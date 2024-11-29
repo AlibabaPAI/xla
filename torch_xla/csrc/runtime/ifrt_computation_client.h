@@ -95,7 +95,23 @@ class IfrtComputationClient : public ComputationClient {
     XLA_ERROR() << __FUNCTION__ << " not implemented";
   }
 
+  virtual std::vector<int64_t> GetAliasInfo(
+      const runtime::ComputationClient::ComputationPtr computation,
+      int64_t input_num, int64_t output_num) override {
+    XLA_ERROR() << __FUNCTION__ << " not implemented";
+  }
+
   std::intptr_t GetCudaStreamForDevice(int local_device_id) const override {
+    XLA_ERROR() << __FUNCTION__ << " not implemented";
+  }
+
+  void SetCudaStreamForDevice(std::intptr_t stream,
+                              int local_device_id) const override {
+    XLA_ERROR() << __FUNCTION__ << " not implemented";
+  }
+
+  void WaitCudaStreamForDevice(
+      const torch::lazy::BackendDevice& device) override {
     XLA_ERROR() << __FUNCTION__ << " not implemented";
   }
 
