@@ -9,17 +9,17 @@ namespace torch_xla {
 class FlashAttentionVarlenPositionIdsForward : public XlaNode {
  public:
   FlashAttentionVarlenPositionIdsForward(const torch::lazy::Value& q,
-                              const torch::lazy::Value& k,
-                              const torch::lazy::Value& v,
-                              const torch::lazy::Value& position_ids,
-                              const std::string params);
+                                         const torch::lazy::Value& k,
+                                         const torch::lazy::Value& v,
+                                         const torch::lazy::Value& position_ids,
+                                         const std::string params);
 
   FlashAttentionVarlenPositionIdsForward(const torch::lazy::Value& q,
-                              const torch::lazy::Value& k,
-                              const torch::lazy::Value& v,
-                              const torch::lazy::Value& position_ids,
-                              const torch::lazy::Value& alibi_slopes,
-                              const std::string params);
+                                         const torch::lazy::Value& k,
+                                         const torch::lazy::Value& v,
+                                         const torch::lazy::Value& position_ids,
+                                         const torch::lazy::Value& alibi_slopes,
+                                         const std::string params);
 
   torch::lazy::NodePtr Clone(torch::lazy::OpList operands) const override;
 

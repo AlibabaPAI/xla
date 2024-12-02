@@ -34,7 +34,7 @@ void run_mha_bwd(Flash_bwd_params& params, cudaStream_t stream,
 }
 
 // Layout of `buffers` listed above:
-//  buffers[0] = dout 
+//  buffers[0] = dout
 //  buffers[1] = q
 //  buffers[2] = k
 //  buffers[3] = v
@@ -48,13 +48,13 @@ void run_mha_bwd(Flash_bwd_params& params, cudaStream_t stream,
 //  buffers[11] = dk  // this is output
 //  buffers[12] = dv  // this is output
 //  buffers[13] = softmax_d  // this is output
-void custom_call_flash_attention_varlen_position_ids_backward(cudaStream_t stream,
-                                                 void** buffers,
-                                                 const char* opaque,
-                                                 size_t opaque_len) {
+void custom_call_flash_attention_varlen_position_ids_backward(
+    cudaStream_t stream, void** buffers, const char* opaque,
+    size_t opaque_len) {
   std::string opaque_str(opaque, opaque_len);
-  TF_VLOG(3) << "custom_call_flash_attention_varlen_position_ids_backward opaque str: "
-             << opaque_str;
+  TF_VLOG(3)
+      << "custom_call_flash_attention_varlen_position_ids_backward opaque str: "
+      << opaque_str;
   FlashAttentionBackwardParams params;
   params.FromString(std::move(opaque_str));
   int buf_offset = params.enable_alibi_slopes;
@@ -87,10 +87,10 @@ void custom_call_flash_attention_varlen_position_ids_backward(cudaStream_t strea
   at::Tensor softmax_lse =
       torch::from_blob(buffers[5], {params.b, params.h, params.seqlen_q},
                        opts.dtype(torch::kFloat));
-  at::Tensor cu_seqlens_q =
-      torch::from_blob(buffers[6], {params.seqlen_q + 1}, opts.dtype(torch::kInt32));
-  at::Tensor cu_seqlens_k =
-      torch::from_blob(buffers[7], {params.seqlen_k + 1}, opts.dtype(torch::kInt32));
+  at::Tensor cu_seqlens_q = torch::from_blob(buffers[6], {params.seqlen_q + 1},
+                                             opts.dtype(torch::kInt32));
+  at::Tensor cu_seqlens_k = torch::from_blob(buffers[7], {params.seqlen_k + 1},
+                                             opts.dtype(torch::kInt32));
 
   // Outputs
   at::Tensor dq =
@@ -120,8 +120,8 @@ void custom_call_flash_attention_varlen_position_ids_backward(cudaStream_t strea
   int total_q = params.b * params.seqlen_q;
   int total_k = params.b * params.seqlen_k;
   int real_batch_size;
-  at::Tensor indices_q =
-     cu_seqlens_to_indices(cu_seqlens_q,max_seqlen_in_batch_q,total_q,real_batch_size);
+  at::Tensor indices_q = cu_seqlens_to_indices(
+      cu_seqlens_q, max_seqlen_in_batch_q, total_q, real_batch_size);
 
   at::Tensor indices_k;
   if (params.seqlen_q == params.seqlen_k) {
@@ -129,12 +129,13 @@ void custom_call_flash_attention_varlen_position_ids_backward(cudaStream_t strea
     max_seqlen_in_batch_k = max_seqlen_in_batch_q;
     total_k = total_q;
   } else {
-    indices_k =
-        cu_seqlens_to_indices(cu_seqlens_k, max_seqlen_in_batch_k, total_k,real_batch_size);
+    indices_k = cu_seqlens_to_indices(cu_seqlens_k, max_seqlen_in_batch_k,
+                                      total_k, real_batch_size);
   }
 
-  auto padded_softmax_lse = pad_softmax_lse(softmax_lse,cu_seqlens_q,max_seqlen_in_batch_q,real_batch_size);
-   
+  auto padded_softmax_lse = pad_softmax_lse(
+      softmax_lse, cu_seqlens_q, max_seqlen_in_batch_q, real_batch_size);
+
   Flash_bwd_params launch_params;
 
   // Reset the parameters
@@ -308,7 +309,6 @@ void custom_call_flash_attention_varlen_position_ids_backward(cudaStream_t strea
   launch_params.rng_state = reinterpret_cast<uint64_t*>(buffers[8]);
 
   launch(launch_params, torch_stream, /*configure=*/false);
-  
 
   // For MQA/GQA we need to sum dK and dV across the groups
   if (launch_params.h_k != launch_params.h) {
@@ -324,13 +324,13 @@ void custom_call_flash_attention_varlen_position_ids_backward(cudaStream_t strea
                 {2});
   }
 
-  dsoftmax_sum.copy_(unpad_softmax_lse(rounded_dsoftmax_sum,cu_seqlens_q));
+  dsoftmax_sum.copy_(unpad_softmax_lse(rounded_dsoftmax_sum, cu_seqlens_q));
 
   cudaEventRecord(xla_wait_torch_event, torch_stream);
   cudaStreamWaitEvent(stream, xla_wait_torch_event);
 }
-XLA_REGISTER_CUSTOM_CALL_TARGET(custom_call_flash_attention_varlen_position_ids_backward,
-                                "CUDA");
+XLA_REGISTER_CUSTOM_CALL_TARGET(
+    custom_call_flash_attention_varlen_position_ids_backward, "CUDA");
 
 std::vector<xla::XlaOp> BuildFlashAttentionVarlenPositionIdsBackward(
     const xla::XlaOp& dout, const xla::XlaOp& q, const xla::XlaOp& k,
@@ -365,13 +365,14 @@ std::vector<xla::XlaOp> BuildFlashAttentionVarlenPositionIdsBackward(
 
 }  // namespace
 
-FlashAttentionVarlenPositionIdsBackward::FlashAttentionVarlenPositionIdsBackward(
-    const torch::lazy::Value& dout, const torch::lazy::Value& q,
-    const torch::lazy::Value& k, const torch::lazy::Value& v,
-    const torch::lazy::Value& out, const torch::lazy::Value& softmax_lse,
-    const torch::lazy::Value& cu_seqlens_q,
-    const torch::lazy::Value& cu_seqlens_k, const torch::lazy::Value& rng_state,
-    const std::string params)
+FlashAttentionVarlenPositionIdsBackward::
+    FlashAttentionVarlenPositionIdsBackward(
+        const torch::lazy::Value& dout, const torch::lazy::Value& q,
+        const torch::lazy::Value& k, const torch::lazy::Value& v,
+        const torch::lazy::Value& out, const torch::lazy::Value& softmax_lse,
+        const torch::lazy::Value& cu_seqlens_q,
+        const torch::lazy::Value& cu_seqlens_k,
+        const torch::lazy::Value& rng_state, const std::string params)
     : XlaNode(xla_flash_attention_backward,
               {dout, q, k, v, out, softmax_lse, cu_seqlens_q, cu_seqlens_k,
                rng_state},
@@ -379,13 +380,15 @@ FlashAttentionVarlenPositionIdsBackward::FlashAttentionVarlenPositionIdsBackward
               /*num_outputs=*/4, torch::lazy::MHash(params)),
       params_(params) {}
 
-FlashAttentionVarlenPositionIdsBackward::FlashAttentionVarlenPositionIdsBackward(
-    const torch::lazy::Value& dout, const torch::lazy::Value& q,
-    const torch::lazy::Value& k, const torch::lazy::Value& v,
-    const torch::lazy::Value& out, const torch::lazy::Value& softmax_lse,
-    const torch::lazy::Value& cu_seqlens_q,
-    const torch::lazy::Value& cu_seqlens_k, const torch::lazy::Value& rng_state,
-    const torch::lazy::Value& alibi_slopes, const std::string params)
+FlashAttentionVarlenPositionIdsBackward::
+    FlashAttentionVarlenPositionIdsBackward(
+        const torch::lazy::Value& dout, const torch::lazy::Value& q,
+        const torch::lazy::Value& k, const torch::lazy::Value& v,
+        const torch::lazy::Value& out, const torch::lazy::Value& softmax_lse,
+        const torch::lazy::Value& cu_seqlens_q,
+        const torch::lazy::Value& cu_seqlens_k,
+        const torch::lazy::Value& rng_state,
+        const torch::lazy::Value& alibi_slopes, const std::string params)
     : XlaNode(xla_flash_attention_backward,
               {dout, q, k, v, out, softmax_lse, cu_seqlens_q, cu_seqlens_k,
                rng_state, alibi_slopes},
@@ -408,7 +411,8 @@ torch::lazy::NodePtr FlashAttentionVarlenPositionIdsBackward::Clone(
   }
 }
 
-XlaOpVector FlashAttentionVarlenPositionIdsBackward::Lower(LoweringContext* loctx) const {
+XlaOpVector FlashAttentionVarlenPositionIdsBackward::Lower(
+    LoweringContext* loctx) const {
   xla::XlaOp dout = loctx->GetOutputOp(operand(0));
   xla::XlaOp q = loctx->GetOutputOp(operand(1));
   xla::XlaOp k = loctx->GetOutputOp(operand(2));

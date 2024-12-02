@@ -132,15 +132,16 @@ at::Tensor cu_seqlens_to_indices(const at::Tensor& cu_seqlens, int batch_size,
                                  int& max_seqlen_in_batch, int& total);
 
 at::Tensor cu_seqlens_to_indices(const at::Tensor& padded_cu_seqlens,
-                                 int& max_seqlen_in_batch,int& total_q,int& real_batch_size);
+                                 int& max_seqlen_in_batch, int& total_q,
+                                 int& real_batch_size);
 
 at::Tensor mask_to_indices(const at::Tensor& attention_mask,
                            int& max_seqlen_in_batch, int& total,
                            at::Tensor& cu_seqlen);
 
-at::Tensor position_ids_to_indices(const at::Tensor& position_ids, 
-                           int& max_seqlen_in_batch, int& total,
-                           at::Tensor& cu_seqlen, int& real_batch_size);
+at::Tensor position_ids_to_indices(const at::Tensor& position_ids,
+                                   int& max_seqlen_in_batch, int& total,
+                                   at::Tensor& cu_seqlen, int& real_batch_size);
 
 at::Tensor index_first_axis(const at::Tensor& input, const at::Tensor& indices);
 
@@ -150,9 +151,11 @@ xla::Shape shape_like(const torch::lazy::Value& input);
 
 xla::Shape shape_like(const xla::XlaBuilder* builder, const xla::XlaOp& input);
 
-torch::Tensor unpad_softmax_lse(const torch::Tensor& pad_softmax_lse, const torch::Tensor& cu_seqlens); 
+torch::Tensor unpad_softmax_lse(const torch::Tensor& pad_softmax_lse,
+                                const torch::Tensor& cu_seqlens);
 
-torch::Tensor pad_softmax_lse(const at::Tensor& softmax_lse,const at::Tensor& cu_seqlens,
-                               const int max_seq_len, const int batch_size);
+torch::Tensor pad_softmax_lse(const at::Tensor& softmax_lse,
+                              const at::Tensor& cu_seqlens,
+                              const int max_seq_len, const int batch_size);
 }  // namespace torch_xla
 #endif  // XLA_TORCH_XLA_CSRC_FLASH_ATTENTION_UTILS_H

@@ -228,10 +228,7 @@ def test_flash_attn_output(seqlen_q, seqlen_k, d, dropout_p, causal,
       cu_seqlen_k_xla, cu_seqlens_k, rtol=1e-3, atol=1e-3, equal_nan=True)
   for i in range(len(cu_seq_lens[0]) - 1):
     seqlen = cu_seq_lens[0][i + 1] -  cu_seq_lens[0][i]
-    assert torch.allclose(softmax_lse_xla[i,:,:seqlen],softmax_lse[i,:,:seqlen],rtol=1e-2,atol=1e-3,equal_nan=True)  
-  
-
-
+    assert torch.allclose(softmax_lse_xla[i,:,:seqlen],softmax_lse[i,:,:seqlen],rtol=1e-2,atol=1e-3,equal_nan=True)
 
 
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
@@ -262,7 +259,7 @@ def test_flash_attn_varlen_from_position_ids(max_seqlen_q, max_seqlen_k, d, drop
   torch.random.manual_seed(0)
   batch_size = 4
   nheads = 9
-  nheads_k = nheads if mha_type == "mha" else (1 if mha_type == "mqa" else 3) 
+  nheads_k = nheads if mha_type == "mha" else (1 if mha_type == "mqa" else 3)
 
   assert nheads % nheads_k == 0
   window_size = (-1, -1) if not local else tuple(
@@ -280,7 +277,7 @@ def test_flash_attn_varlen_from_position_ids(max_seqlen_q, max_seqlen_k, d, drop
       seq_len_k = torch.randint(1,max_seqlen_k+1,(batch_size,))
     total_q = seq_len_q.sum().item()
     total_k = seq_len_k.sum().item()
-    
+
     padd_q = 0 if total_q % 8 == 0 else 8 - total_q % 8
     padd_k = 0 if total_k % 8 == 0 else 8 - total_k % 8
     if use_same_seqlen:
@@ -301,24 +298,23 @@ def test_flash_attn_varlen_from_position_ids(max_seqlen_q, max_seqlen_k, d, drop
     v = torch.randn((1,total_k,n_heads_k,head_dim),dtype=dtype,device=device)
 
     assert torch.all(seq_len_q > 0)
-    assert torch.all(seq_len_k > 0) 
+    assert torch.all(seq_len_k > 0)
 
     position_ids_q = torch.cat([torch.arange(0,seq_len,dtype=torch.int32,device=device) for seq_len in seq_len_q],dim=0).unsqueeze(0)
     position_ids_k = torch.cat([torch.arange(0,seq_len,dtype=torch.int32,device=device) for seq_len in seq_len_k],dim=0).unsqueeze(0)
     assert position_ids_q.shape[1] % 8 == 0
     assert position_ids_k.shape[1] % 8 == 0
-    
+
     return q,k,v,position_ids_q,position_ids_k
-  
 
   q,k,v,position_ids_q,position_ids_k = generate_qkv_and_position_ids(batch_size,max_seqlen_q,max_seqlen_k,dtype,nheads,nheads_k,device,d,max_seqlen_q == max_seqlen_k)
- 
+
   indices_q = torch.arange(0,position_ids_q.size(1),device=device,dtype=torch.int64)
   indices_k = torch.arange(0,position_ids_k.size(1),device=device,dtype=torch.int64)
 
   seq_q_start_idx = indices_q[position_ids_q.squeeze() == 0]
   seq_k_start_idx = indices_k[position_ids_k.squeeze() == 0]
-  
+
   cu_seq_lens_q = F.pad(seq_q_start_idx,(0,1),value=position_ids_q.size(1)).to(torch.int32)
   cu_seq_lens_k = F.pad(seq_k_start_idx,(0,1),value=position_ids_k.size(1)).to(torch.int32)
 
@@ -335,7 +331,6 @@ def test_flash_attn_varlen_from_position_ids(max_seqlen_q, max_seqlen_k, d, drop
         batch_size, nheads, device=device, dtype=torch.float32) * 0.3
   else:
     alibi_slopes = None
-  
 
   out_fa, softmax_lse, _ = flash_attn_varlen_func(
       q_cuda.contiguous(),
@@ -415,4 +410,4 @@ def test_flash_attn_varlen_from_position_ids(max_seqlen_q, max_seqlen_k, d, drop
     start_idx = cu_seq_len_q_xla[i]
     end_idx = cu_seq_len_q_xla[i+1]
     seqlen = end_idx - start_idx
-    assert torch.allclose(softmax_lse_xla[0,:,start_idx:end_idx],softmax_lse[i,:,:seqlen],rtol=1e-3,atol=1e-3,equal_nan=True)  
+    assert torch.allclose(softmax_lse_xla[0,:,start_idx:end_idx],softmax_lse[i,:,:seqlen],rtol=1e-3,atol=1e-3,equal_nan=True)

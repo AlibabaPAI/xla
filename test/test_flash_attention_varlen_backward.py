@@ -251,8 +251,6 @@ def test_flash_attn_varlen_backward(seqlen_q, seqlen_k, d, dropout_p, causal,
   assert torch.allclose(dv_cuda, dv_xla, rtol=1e-2, atol=1e-2, equal_nan=True)
 
 
-
-
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("mha_type", ["mha", "mqa", "gqa"])
 @pytest.mark.parametrize("deterministic", [False])
@@ -366,7 +364,7 @@ def test_flash_attn_varlen_position_ids_backward(seqlen_q, seqlen_k, d, dropout_
 
   device = ta.lazy_device()
   torch.random.manual_seed(101)
-  
+
   indices_q = indices_q.cpu()
   indices_k = indices_k.cpu()
 
@@ -374,7 +372,7 @@ def test_flash_attn_varlen_position_ids_backward(seqlen_q, seqlen_k, d, dropout_
   k_xla = k.flatten(0,1)[indices_k].unsqueeze(0).to(device)
   v_xla = v.flatten(0,1)[indices_k].unsqueeze(0).to(device)
   do_xla = do.flatten(0,1)[indices_q].unsqueeze(0).to(device)
-  
+
   def attention_mask_to_position_ids(attention_mask):
     seqlens = attention_mask.sum(dim=1).flatten()
     position_ids = torch.cat([torch.arange(0,seqlen,dtype=torch.int32,device=attention_mask.device) for seqlen in seqlens],dim=0)
@@ -385,7 +383,6 @@ def test_flash_attn_varlen_position_ids_backward(seqlen_q, seqlen_k, d, dropout_
   rng_state_xla = rng_state.to(device)
   if alibi:
     alibi_slopes = alibi_slopes.cpu().to(device)
-  
 
   softmax_lse_xla, o_xla, _, cu_seqlen_q_xla, cu_seqlen_k_xla = torch_xla._XLAC._flash_attention_position_ids_forward(
       q_xla.contiguous(), k_xla.contiguous(), v_xla.contiguous(),
@@ -420,7 +417,7 @@ def test_flash_attn_varlen_position_ids_backward(seqlen_q, seqlen_k, d, dropout_
   dv_xla = dv_xla.cpu().detach().squeeze(0)
   do_xla = do_xla.cpu().detach().squeeze(0)
   softmax_d_xla = softmax_d_xla.cpu().detach()
-  
+
   dq_xla = pad_input(dq_xla, indices_q, batch_size, seqlen_q)
   dk_xla = pad_input(dk_xla, indices_k, batch_size, seqlen_k)
   dv_xla = pad_input(dv_xla, indices_k, batch_size, seqlen_k)

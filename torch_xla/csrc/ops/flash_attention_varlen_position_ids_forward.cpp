@@ -3,6 +3,7 @@
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/extension.h>
+
 #include <iostream>
 
 #include "cutlass/numeric_types.h"
@@ -22,12 +23,12 @@ xla::Shape NodeOutputShape(const torch::lazy::Value& q) {
   auto q_shape = xla::SpanToVector(GetXlaShape(q).dimensions());
   xla::Shape softmax_lse_shape = xla::ShapeUtil::MakeShape(
       xla::PrimitiveType::F32,
-      {q_shape[0], q_shape[2],
-       q_shape[1]});  // 1, num_heads, total_q
+      {q_shape[0], q_shape[2], q_shape[1]});  // 1, num_heads, total_q
   xla::Shape rng_state_shape =
       xla::ShapeUtil::MakeShape(xla::PrimitiveType::S64, {2});
-  xla::Shape cu_seqlens_shape =
-      xla::ShapeUtil::MakeShape(xla::PrimitiveType::S32, {q_shape[1] + 1}); // q.shape [1,total_q,num_head,head_dim]
+  xla::Shape cu_seqlens_shape = xla::ShapeUtil::MakeShape(
+      xla::PrimitiveType::S32,
+      {q_shape[1] + 1});  // q.shape [1,total_q,num_head,head_dim]
   return xla::ShapeUtil::MakeTupleShape({softmax_lse_shape, shape_like(q),
                                          rng_state_shape, cu_seqlens_shape,
                                          cu_seqlens_shape});
@@ -44,14 +45,13 @@ xla::Shape NodeOutputShape(const torch::lazy::Value& q) {
 //  buffers[7] = rng_state // this is output
 //  buffers[8] = cu_seqlen_q // this is output
 //  buffers[9] = cu_seqlen_k // this is output
-void custom_call_flash_attention_varlen_position_ids_forward(cudaStream_t stream,
-                                                void** buffers,
-                                                const char* opaque,
-                                                size_t opaque_len) {
-                                             
+void custom_call_flash_attention_varlen_position_ids_forward(
+    cudaStream_t stream, void** buffers, const char* opaque,
+    size_t opaque_len) {
   std::string opaque_str(opaque, opaque_len);
-  TF_VLOG(3) << "custom_call_flash_attention_varlen_position_ids_forward opaque str: "
-             << opaque_str;
+  TF_VLOG(3)
+      << "custom_call_flash_attention_varlen_position_ids_forward opaque str: "
+      << opaque_str;
   FlashAttentionForwardParams params;
   params.FromString(std::move(opaque_str));
   int buf_offset = params.enable_alibi_slopes;
@@ -102,17 +102,20 @@ void custom_call_flash_attention_varlen_position_ids_forward(cudaStream_t stream
   int total_k = params.b * params.seqlen_k;
   at::Tensor indices_k;
 
-  int real_batch_size; // packed qkv's batch size is 1, but fa need to know real batch size before packing.
-  indices_k = position_ids_to_indices(position_ids, max_seqlen_in_batch_k,total_k,
-                                      cu_seqlens_k,real_batch_size);
-  TORCH_CHECK(cu_seqlens_k.size(0) == params.seqlen_k + 1, "cu_seqlen'shape should be params.seqlen_k");
+  int real_batch_size;  // packed qkv's batch size is 1, but fa need to know
+                        // real batch size before packing.
+  indices_k = position_ids_to_indices(position_ids, max_seqlen_in_batch_k,
+                                      total_k, cu_seqlens_k, real_batch_size);
+  TORCH_CHECK(cu_seqlens_k.size(0) == params.seqlen_k + 1,
+              "cu_seqlen'shape should be params.seqlen_k");
   TORCH_CHECK(indices_k.dtype() == torch::kInt64, "indice should be int64");
 
-  int max_seqlen_in_batch_q = max_seqlen_in_batch_k; 
+  int max_seqlen_in_batch_q = max_seqlen_in_batch_k;
   int total_q = total_k;
   at::Tensor indices_q;
 
-  TORCH_CHECK(params.seqlen_q == params.seqlen_k, "now only support same seqlen for q and k");
+  TORCH_CHECK(params.seqlen_q == params.seqlen_k,
+              "now only support same seqlen for q and k");
 
   if (params.seqlen_q == params.seqlen_k) {
     cu_seqlens_q.copy_(cu_seqlens_k);
@@ -120,7 +123,7 @@ void custom_call_flash_attention_varlen_position_ids_forward(cudaStream_t stream
   } else {
     // TODO:(wangtianxing.wtx) support different seqlen_q and seqlen_k
     indices_q = position_ids_to_indices(position_ids, max_seqlen_in_batch_q,
-                              total_q, cu_seqlens_q,real_batch_size);
+                                        total_q, cu_seqlens_q, real_batch_size);
   }
 
   if (max_seqlen_in_batch_q == 1) {
@@ -141,7 +144,9 @@ void custom_call_flash_attention_varlen_position_ids_forward(cudaStream_t stream
   // Cast to char to avoid compiler warning about narrowing
   at::cuda::CUDAGuard device_guard{(char)q.get_device()};
 
-  at::Tensor pad_softmax_lse = at::empty({real_batch_size,params.h,max_seqlen_in_batch_q},torch::dtype(torch::kFloat).device(torch::kCUDA));
+  at::Tensor pad_softmax_lse =
+      at::empty({real_batch_size, params.h, max_seqlen_in_batch_q},
+                torch::dtype(torch::kFloat).device(torch::kCUDA));
 
   Flash_fwd_params launch_params;
 
@@ -242,16 +247,16 @@ void custom_call_flash_attention_varlen_position_ids_forward(cudaStream_t stream
       run_mha_fwd_<elem_type, kHeadDim>(launch_params, torch_stream);
     });
   });
-  softmax_lse.copy_(unpad_softmax_lse(pad_softmax_lse,cu_seqlens_q));
-  
+  softmax_lse.copy_(unpad_softmax_lse(pad_softmax_lse, cu_seqlens_q));
+
   // TODO(wenting.swt): we should pad and unpad q,k,v when head_size_og % 8 != 0
   // sync with cudaEvent
   cudaEventRecord(xla_wait_torch_event, torch_stream);
   cudaStreamWaitEvent(stream, xla_wait_torch_event);
 }
 
-XLA_REGISTER_CUSTOM_CALL_TARGET(custom_call_flash_attention_varlen_position_ids_forward,
-                                "CUDA");
+XLA_REGISTER_CUSTOM_CALL_TARGET(
+    custom_call_flash_attention_varlen_position_ids_forward, "CUDA");
 
 std::vector<xla::XlaOp> BuildFlashAttentionVarlenPositionIdsForward(
     const xla::XlaOp& q, const xla::XlaOp& k, const xla::XlaOp& v,
@@ -310,7 +315,8 @@ torch::lazy::NodePtr FlashAttentionVarlenPositionIdsForward::Clone(
   }
 }
 
-XlaOpVector FlashAttentionVarlenPositionIdsForward::Lower(LoweringContext* loctx) const {
+XlaOpVector FlashAttentionVarlenPositionIdsForward::Lower(
+    LoweringContext* loctx) const {
   xla::XlaOp q = loctx->GetOutputOp(operand(0));
   xla::XlaOp k = loctx->GetOutputOp(operand(1));
   xla::XlaOp v = loctx->GetOutputOp(operand(2));

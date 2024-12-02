@@ -2409,9 +2409,9 @@ void InitXlaModuleBindings(py::module m) {
            c10::optional<at::Generator> gen_) {
           // get launch params on at::Tensor
           auto params = get_flash_attention_forward_params(
-              q, k, v, attention_mask, c10::nullopt, alibi_slopes, p_dropout, softmax_scale,
-              zero_tensors, is_causal, window_size_left, window_size_right,
-              return_softmax);
+              q, k, v, attention_mask, c10::nullopt, alibi_slopes, p_dropout,
+              softmax_scale, zero_tensors, is_causal, window_size_left,
+              window_size_right, return_softmax);
           // call flash attention forward
           XLATensorPtr q_xla = bridge::GetXlaTensor(q);
           XLATensorPtr k_xla = bridge::GetXlaTensor(k);
@@ -2451,9 +2451,9 @@ void InitXlaModuleBindings(py::module m) {
            c10::optional<at::Generator> gen_) {
           // get launch params on at::Tensor
           auto params = get_flash_attention_forward_params(
-              q, k, v, c10::nullopt, position_ids, alibi_slopes, p_dropout, softmax_scale,
-              zero_tensors, is_causal, window_size_left, window_size_right,
-              return_softmax);
+              q, k, v, c10::nullopt, position_ids, alibi_slopes, p_dropout,
+              softmax_scale, zero_tensors, is_causal, window_size_left,
+              window_size_right, return_softmax);
           // call flash attention forward
           XLATensorPtr q_xla = bridge::GetXlaTensor(q);
           XLATensorPtr k_xla = bridge::GetXlaTensor(k);
@@ -2465,12 +2465,12 @@ void InitXlaModuleBindings(py::module m) {
 
           std::vector<XLATensorPtr> xresults;
           if (position_ids.has_value()) {
-
             XLATensorPtr position_ids_xla =
                 bridge::GetXlaTensor(position_ids.value());
-            xresults = tensor_methods::flash_attention_varlen_position_ids_forward(
-                q_xla, k_xla, v_xla, position_ids_xla, alibi_slopes_xla,
-                params.ToString());
+            xresults =
+                tensor_methods::flash_attention_varlen_position_ids_forward(
+                    q_xla, k_xla, v_xla, position_ids_xla, alibi_slopes_xla,
+                    params.ToString());
           } else {
             xresults = tensor_methods::flash_attention_forward(
                 q_xla, k_xla, v_xla, alibi_slopes_xla, params.ToString());
@@ -2483,7 +2483,7 @@ void InitXlaModuleBindings(py::module m) {
           }
           return results;
         });
-  
+
   m.def(
       "_flash_attention_backward",
       [](const at::Tensor& dout, const at::Tensor& q, const at::Tensor& k,
@@ -2571,10 +2571,11 @@ void InitXlaModuleBindings(py::module m) {
               bridge::GetXlaTensor(cu_seqlens_q.value());
           XLATensorPtr cu_seqlens_k_xla =
               bridge::GetXlaTensor(cu_seqlens_k.value());
-          xresults = tensor_methods::flash_attention_varlen_position_ids_backward(
-              dout_xla, q_xla, k_xla, v_xla, out_xla, softmax_lse_xla,
-              cu_seqlens_q_xla, cu_seqlens_k_xla, rng_state_xla,
-              alibi_slopes_xla, params.ToString());
+          xresults =
+              tensor_methods::flash_attention_varlen_position_ids_backward(
+                  dout_xla, q_xla, k_xla, v_xla, out_xla, softmax_lse_xla,
+                  cu_seqlens_q_xla, cu_seqlens_k_xla, rng_state_xla,
+                  alibi_slopes_xla, params.ToString());
         } else {
           xresults = tensor_methods::flash_attention_backward(
               dout_xla, q_xla, k_xla, v_xla, out_xla, softmax_lse_xla,
