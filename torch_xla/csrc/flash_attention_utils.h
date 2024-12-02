@@ -112,7 +112,8 @@ void set_backward_params(FlashAttentionBackwardParams& params, const size_t b,
 
 FlashAttentionForwardParams get_flash_attention_forward_params(
     const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
-    c10::optional<at::Tensor>& attention_mask,
+    c10::optional<at::Tensor> attention_mask,
+    c10::optional<at::Tensor> position_ids,
     c10::optional<at::Tensor>& alibi_slopes_, const float p_dropout,
     const float softmax_scale, const bool zero_tensors, const bool is_causal,
     int window_size_left, int window_size_right, const bool return_softmax);
@@ -130,9 +131,16 @@ at::Tensor cu_seqlens_to_indices(const at::Tensor& cu_seqlens, int batch_size,
                                  int seqlen, torch::Dtype scalar_type,
                                  int& max_seqlen_in_batch, int& total);
 
+at::Tensor cu_seqlens_to_indices(const at::Tensor& padded_cu_seqlens,
+                                 int& max_seqlen_in_batch,int& total_q,int& real_batch_size);
+
 at::Tensor mask_to_indices(const at::Tensor& attention_mask,
                            int& max_seqlen_in_batch, int& total,
                            at::Tensor& cu_seqlen);
+
+at::Tensor position_ids_to_indices(const at::Tensor& position_ids, 
+                           int& max_seqlen_in_batch, int& total,
+                           at::Tensor& cu_seqlen, int& real_batch_size);
 
 at::Tensor index_first_axis(const at::Tensor& input, const at::Tensor& indices);
 
@@ -142,5 +150,9 @@ xla::Shape shape_like(const torch::lazy::Value& input);
 
 xla::Shape shape_like(const xla::XlaBuilder* builder, const xla::XlaOp& input);
 
+torch::Tensor unpad_softmax_lse(const torch::Tensor& pad_softmax_lse, const torch::Tensor& cu_seqlens); 
+
+torch::Tensor pad_softmax_lse(const at::Tensor& softmax_lse,const at::Tensor& cu_seqlens,
+                               const int max_seq_len, const int batch_size);
 }  // namespace torch_xla
 #endif  // XLA_TORCH_XLA_CSRC_FLASH_ATTENTION_UTILS_H
