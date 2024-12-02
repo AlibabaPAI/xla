@@ -135,19 +135,19 @@ std::vector<ComputationClient::DataPtr> DISCComputationClient::TransferToDevice(
 
     auto dtype =
         at::TensorOptions(TorchTypeFromXlaType(tensor->shape().element_type()));
-    auto ret = at::empty(sizes, dtype).contiguous();
+    auto ret = at::empty(sizes, dtype.pinned_memory(true)).contiguous();
     // tensor->populate_fn(tensor, ret.data_ptr(),
     //                    ret.element_size() * ret.numel());
-    std::memcpy(ret.data_ptr(), tensor->data(),
-                ret.element_size() * ret.numel());
+    auto transfered_bytes = ret.element_size() * ret.numel();
+    std::memcpy(ret.data_ptr(), tensor->data(), transfered_bytes);
 
-    total_transfered_bytes += ret.element_size() * ret.numel();
+    total_transfered_bytes += transfered_bytes;
 
     if (!torch::cuda::is_available()) {
       XLA_ERROR() << "CUDA is not available.";
     }
 
-    auto device_ret = ret.to(at::kCUDA);
+    auto device_ret = ret.to(at::kCUDA, /*non_blocking*/ true);
     ComputationClient::DataPtr data = std::make_shared<DISCData>(
         tensor->device(), tensor->shape(), device_ret);
     datas.push_back(data);
