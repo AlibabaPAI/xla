@@ -266,9 +266,10 @@ def test_flash_attn_varlen_backward(seqlen_q, seqlen_k, d, dropout_p, causal,
     ],
 )
 @pytest.mark.parametrize("dropout_p", [0.0])
-def test_flash_attn_varlen_position_ids_backward(seqlen_q, seqlen_k, d, dropout_p, causal,
-                                    local, alibi, deterministic, mha_type,
-                                    dtype):
+def test_flash_attn_varlen_position_ids_backward(seqlen_q, seqlen_k, d,
+                                                 dropout_p, causal, local,
+                                                 alibi, deterministic, mha_type,
+                                                 dtype):
   if d % 8 != 0:
     pytest.skip(reason="Expected head_size_og % 8 == 0 to be true")
 
@@ -368,14 +369,19 @@ def test_flash_attn_varlen_position_ids_backward(seqlen_q, seqlen_k, d, dropout_
   indices_q = indices_q.cpu()
   indices_k = indices_k.cpu()
 
-  q_xla = q.flatten(0,1)[indices_q].unsqueeze(0).to(device)
-  k_xla = k.flatten(0,1)[indices_k].unsqueeze(0).to(device)
-  v_xla = v.flatten(0,1)[indices_k].unsqueeze(0).to(device)
-  do_xla = do.flatten(0,1)[indices_q].unsqueeze(0).to(device)
+  q_xla = q.flatten(0, 1)[indices_q].unsqueeze(0).to(device)
+  k_xla = k.flatten(0, 1)[indices_k].unsqueeze(0).to(device)
+  v_xla = v.flatten(0, 1)[indices_k].unsqueeze(0).to(device)
+  do_xla = do.flatten(0, 1)[indices_q].unsqueeze(0).to(device)
 
   def attention_mask_to_position_ids(attention_mask):
     seqlens = attention_mask.sum(dim=1).flatten()
-    position_ids = torch.cat([torch.arange(0,seqlen,dtype=torch.int32,device=attention_mask.device) for seqlen in seqlens],dim=0)
+    position_ids = torch.cat([
+        torch.arange(
+            0, seqlen, dtype=torch.int32, device=attention_mask.device)
+        for seqlen in seqlens
+    ],
+                             dim=0)
     return position_ids.unsqueeze(0)
 
   position_ids_xla = attention_mask_to_position_ids(attention_mask).to(device)
@@ -389,12 +395,36 @@ def test_flash_attn_varlen_position_ids_backward(seqlen_q, seqlen_k, d, dropout_
       position_ids_xla.contiguous(), alibi_slopes, dropout_p, softmax_scale,
       False, causal, window_size[0], window_size[1], True, None)
 
-  assert torch.allclose(q_xla.cpu(), q_cuda.cpu().unsqueeze(0), rtol=1e-3, atol=1e-3, equal_nan=True)
-  assert torch.allclose(k_xla.cpu(), k_cuda.cpu().unsqueeze(0), rtol=1e-3, atol=1e-3, equal_nan=True)
-  assert torch.allclose(v_xla.cpu(), v_cuda.cpu().unsqueeze(0), rtol=1e-3, atol=1e-3, equal_nan=True)
   assert torch.allclose(
-      cu_seqlen_k_xla[:batch_size+1].cpu(), cu_seqlens_k.cpu(), rtol=1e-3, atol=1e-3, equal_nan=True)
-  assert torch.allclose(o_xla.cpu(), o_cuda.unsqueeze(0).cpu(), rtol=1e-2, atol=1e-2, equal_nan=True)
+      q_xla.cpu(),
+      q_cuda.cpu().unsqueeze(0),
+      rtol=1e-3,
+      atol=1e-3,
+      equal_nan=True)
+  assert torch.allclose(
+      k_xla.cpu(),
+      k_cuda.cpu().unsqueeze(0),
+      rtol=1e-3,
+      atol=1e-3,
+      equal_nan=True)
+  assert torch.allclose(
+      v_xla.cpu(),
+      v_cuda.cpu().unsqueeze(0),
+      rtol=1e-3,
+      atol=1e-3,
+      equal_nan=True)
+  assert torch.allclose(
+      cu_seqlen_k_xla[:batch_size + 1].cpu(),
+      cu_seqlens_k.cpu(),
+      rtol=1e-3,
+      atol=1e-3,
+      equal_nan=True)
+  assert torch.allclose(
+      o_xla.cpu(),
+      o_cuda.unsqueeze(0).cpu(),
+      rtol=1e-2,
+      atol=1e-2,
+      equal_nan=True)
 
   q_xla.requires_grad = True
   k_xla.requires_grad = True
@@ -425,4 +455,3 @@ def test_flash_attn_varlen_position_ids_backward(seqlen_q, seqlen_k, d, dropout_
   assert torch.allclose(dq_cuda, dq_xla, rtol=1e-2, atol=1e-2, equal_nan=True)
   assert torch.allclose(dk_cuda, dk_xla, rtol=1e-2, atol=1e-2, equal_nan=True)
   assert torch.allclose(dv_cuda, dv_xla, rtol=1e-2, atol=1e-2, equal_nan=True)
-
