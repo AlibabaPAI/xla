@@ -4,8 +4,6 @@
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/extension.h>
 
-#include <iostream>
-
 #include "cutlass/numeric_types.h"
 #include "flash.h"
 #include "static_switch.h"

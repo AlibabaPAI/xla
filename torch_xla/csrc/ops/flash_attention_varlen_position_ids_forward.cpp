@@ -4,8 +4,6 @@
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/extension.h>
 
-#include <iostream>
-
 #include "cutlass/numeric_types.h"
 #include "flash.h"
 #include "static_switch.h"
@@ -96,7 +94,6 @@ void custom_call_flash_attention_varlen_position_ids_forward(
       torch::from_blob(buffers[6 + buf_offset], {2}, opts.dtype(torch::kInt64));
   softmax_lse.fill_(0);
   o_output.fill_(0);
-  cu_seqlens_k.fill_(-1);
 
   int max_seqlen_in_batch_k = params.seqlen_k;
   int total_k = params.b * params.seqlen_k;
