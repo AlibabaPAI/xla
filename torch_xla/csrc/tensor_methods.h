@@ -123,6 +123,11 @@ std::vector<XLATensorPtr> flash_attention_varlen_forward(
     const XLATensorPtr& attention_mask, const XLATensorPtr& alibi_slopes,
     const std::string& params);
 
+std::vector<XLATensorPtr> flash_attention_varlen_position_ids_forward(
+    const XLATensorPtr& q, const XLATensorPtr& k, const XLATensorPtr& v,
+    const XLATensorPtr& position_ids, const XLATensorPtr& alibi_slopes,
+    const std::string& params);
+
 std::vector<XLATensorPtr> flash_attention_backward(
     const XLATensorPtr& dout, const XLATensorPtr& q, const XLATensorPtr& k,
     const XLATensorPtr& v, const XLATensorPtr& out,
@@ -130,6 +135,13 @@ std::vector<XLATensorPtr> flash_attention_backward(
     const XLATensorPtr& alibi_slopes, const std::string& params);
 
 std::vector<XLATensorPtr> flash_attention_varlen_backward(
+    const XLATensorPtr& dout, const XLATensorPtr& q, const XLATensorPtr& k,
+    const XLATensorPtr& v, const XLATensorPtr& out,
+    const XLATensorPtr& softmax_lse, const XLATensorPtr& cu_seqlens_q,
+    const XLATensorPtr& cu_seqlens_k, const XLATensorPtr& rng_state,
+    const XLATensorPtr& alibi_slopes, const std::string& params);
+
+std::vector<XLATensorPtr> flash_attention_varlen_position_ids_backward(
     const XLATensorPtr& dout, const XLATensorPtr& q, const XLATensorPtr& k,
     const XLATensorPtr& v, const XLATensorPtr& out,
     const XLATensorPtr& softmax_lse, const XLATensorPtr& cu_seqlens_q,

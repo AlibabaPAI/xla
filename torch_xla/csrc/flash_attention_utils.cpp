@@ -236,7 +236,8 @@ void set_backward_params(FlashAttentionBackwardParams& params, const size_t b,
 
 FlashAttentionForwardParams get_flash_attention_forward_params(
     const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
-    c10::optional<at::Tensor>& attention_mask,  // (batch_size, seqlen)
+    c10::optional<at::Tensor> attention_mask,  // (batch_size, seqlen)
+    c10::optional<at::Tensor> position_ids,    // (1,seqlen_q)
     c10::optional<at::Tensor>& alibi_slopes_, const float p_dropout,
     const float softmax_scale, const bool zero_tensors, const bool is_causal,
     int window_size_left, int window_size_right, const bool return_softmax) {
@@ -274,9 +275,14 @@ FlashAttentionForwardParams get_flash_attention_forward_params(
   CHECK_SHAPE(q, batch_size, seqlen_q, num_heads, head_size_og);
   CHECK_SHAPE(k, batch_size, seqlen_k, num_heads_k, head_size_og);
   CHECK_SHAPE(v, batch_size, seqlen_k, num_heads_k, head_size_og);
+
   if (attention_mask.has_value()) {
     TORCH_CHECK(attention_mask.value().dtype() == torch::kInt32);
     CHECK_SHAPE(attention_mask.value(), batch_size, seqlen_k);
+  }
+  if (position_ids.has_value()) {
+    TORCH_CHECK(position_ids.value().dtype() == torch::kInt32);
+    CHECK_SHAPE(position_ids.value(), 1, seqlen_q);
   }
 
   auto round_multiple = [](int x, int m) { return (x + m - 1) / m * m; };
@@ -308,7 +314,6 @@ FlashAttentionForwardParams get_flash_attention_forward_params(
                      p_dropout, softmax_scale, is_causal, window_size_left,
                      window_size_right, alibi_slopes_batch_stride,
                      enable_alibi_slopes, /*seqlenq_ngroups_swapped*/ false);
-
   return params;
 }
 
@@ -382,9 +387,19 @@ FlashAttentionBackwardParams get_flash_attention_backward_params(
     TORCH_CHECK(cu_seqlens_k.value().dtype() == torch::kInt32);
     TORCH_CHECK(cu_seqlens_q.value().is_contiguous());
     TORCH_CHECK(cu_seqlens_k.value().is_contiguous());
-    TORCH_CHECK(batch_size == cu_seqlens_q.value().numel() - 1);
-    CHECK_SHAPE(cu_seqlens_q.value(), batch_size + 1);
-    CHECK_SHAPE(cu_seqlens_k.value(), batch_size + 1);
+    TORCH_CHECK(batch_size == cu_seqlens_q.value().numel() - 1 ||
+                batch_size == 1);  // now pack qkv batch size only support 1,
+                                   // maybe need to change in the future
+    TORCH_CHECK(
+        cu_seqlens_q.value().sizes() == torch::IntArrayRef({batch_size + 1}) ||
+            cu_seqlens_q.value().sizes() ==
+                torch::IntArrayRef({seqlen_q * batch_size + 1}),
+        "cu_seqlens_q shape should be batch_size+1 or seqlen_q+1");
+    TORCH_CHECK(
+        cu_seqlens_k.value().sizes() == torch::IntArrayRef({batch_size + 1}) ||
+            cu_seqlens_k.value().sizes() ==
+                torch::IntArrayRef({seqlen_k * batch_size + 1}),
+        "cu_seqlens_k shape should be batch_size+1 or seqlen_k+1");
   }
 
   int alibi_slopes_batch_stride = 0;
@@ -410,6 +425,21 @@ FlashAttentionBackwardParams get_flash_attention_backward_params(
                       window_size_right, deterministic,
                       alibi_slopes_batch_stride, enable_alibi_slopes);
   return params;
+}
+
+at::Tensor cu_seqlens_to_indices(const at::Tensor& padded_cu_seqlens,
+                                 int& max_seqlen_in_batch, int& total_q,
+                                 int& real_batch_size) {
+  const at::Tensor valid_cu_seqlens =
+      padded_cu_seqlens.index({padded_cu_seqlens > -1});
+  real_batch_size = valid_cu_seqlens.size(0) - 1;
+  at::Tensor seqs_len =
+      valid_cu_seqlens.slice(0, 1, valid_cu_seqlens.size(0)) -
+      valid_cu_seqlens.slice(0, 0, valid_cu_seqlens.size(0) - 1);
+  max_seqlen_in_batch = seqs_len.max().item<int>();
+  total_q = valid_cu_seqlens[-1].item<int>();
+  return torch::arange(total_q,
+                       torch::dtype(torch::kInt64).device(torch::kCUDA));
 }
 
 at::Tensor cu_seqlens_to_indices(const at::Tensor& cu_seqlens, int batch_size,
@@ -451,18 +481,92 @@ at::Tensor mask_to_indices(const at::Tensor& attention_mask,
   return indices;
 }
 
+torch::Tensor unpad_softmax_lse(
+    const torch::Tensor& pad_softmax_lse,  // (batch_size, nhead, max_seqlen)
+    const torch::Tensor& cu_seqlens)       // (total_seqlen + 1)
+{
+  int batch_size = pad_softmax_lse.size(0);
+  int nhead = pad_softmax_lse.size(1);
+  int max_seqlen = pad_softmax_lse.size(2);
+  int total, max_seqlen_in_batch;
+  at::Tensor valid_cu_seqlens = cu_seqlens.slice(0, 0, batch_size + 1);
+  at::Tensor indices =
+      cu_seqlens_to_indices(valid_cu_seqlens, batch_size, max_seqlen,
+                            torch::kInt64, max_seqlen_in_batch, total);
+  at::Tensor result = at::empty({total, nhead}, pad_softmax_lse.options());
+  result.copy_(
+      pad_softmax_lse.transpose(1, 2)
+          .reshape({batch_size * max_seqlen, nhead})
+          .index({indices,
+                  torch::indexing::Slice()}));  // if packed tensor's batch size
+                                                // > 1 is supported in the
+                                                // future, need to modify here
+                                                // in the future
+  return result.transpose(0, 1).unsqueeze(0);
+}
+
+torch::Tensor pad_softmax_lse(
+    const at::Tensor& softmax_lse,  // (1,nheads,total_seqlen)
+    const at::Tensor& cu_seqlens, const int max_seq_len, const int batch_size) {
+  const int nheads = softmax_lse.size(1);
+  int max_seqlen_in_batch;
+  int total;
+  at::Tensor valid_cu_seqlens = cu_seqlens.slice(0, 0, batch_size + 1);
+  at::Tensor indices =
+      cu_seqlens_to_indices(valid_cu_seqlens, batch_size, max_seq_len,
+                            torch::kInt32, max_seqlen_in_batch, total);
+  TORCH_CHECK(indices.size(0) == softmax_lse.size(2),
+              "indice should be same size with softmax_lse")
+
+  at::Tensor result =
+      at::zeros({batch_size * max_seq_len, nheads}, softmax_lse.options());
+
+  result.index_put_({indices, torch::indexing::Slice()},
+                    softmax_lse.squeeze(0).transpose(0, 1));
+  return result.reshape({batch_size, max_seq_len, nheads})
+      .transpose(1, 2)
+      .contiguous();
+}
+
+at::Tensor position_ids_to_indices(const at::Tensor& position_ids,
+                                   int& max_seqlen_in_batch, int& total,
+                                   at::Tensor& cu_seqlen,
+                                   int& real_batch_size) {
+  cu_seqlen.fill_(-1);
+  at::Tensor flatten_position_ids = position_ids.flatten();
+  at::Tensor indices =
+      torch::arange(flatten_position_ids.size(0),
+                    torch::dtype(torch::kInt64).device(torch::kCUDA));
+
+  at::Tensor batch_seq_start_idx = indices.index({flatten_position_ids == 0});
+  real_batch_size = batch_seq_start_idx.size(0);
+  at::Tensor batch_seqlen_cumsum = at::empty(
+      {real_batch_size + 1}, torch::dtype(torch::kInt32).device(torch::kCUDA));
+  batch_seqlen_cumsum.index({torch::indexing::Slice(0, real_batch_size)}) =
+      batch_seq_start_idx;
+  total = flatten_position_ids.size(0);
+  batch_seqlen_cumsum.index({-1}) = total;
+
+  at::Tensor batch_seqlen =
+      batch_seqlen_cumsum.slice(0, 1, batch_seqlen_cumsum.size(0)) -
+      batch_seqlen_cumsum.slice(0, 0, batch_seqlen_cumsum.size(0) - 1);
+  max_seqlen_in_batch = batch_seqlen.max().item<int>();
+  cu_seqlen.narrow(0, 0, real_batch_size + 1) = batch_seqlen_cumsum;
+  return indices;
+}
+
 at::Tensor index_first_axis(const at::Tensor& input,
                             const at::Tensor& indices) {
   torch::IntArrayRef sizes = input.sizes();
-  int64_t first_axis_dim = sizes[0];
-  auto other_shape = sizes.slice(1, sizes.size() - 1);
+  int64_t first_axis_dim = sizes[0];                    // bs
+  auto other_shape = sizes.slice(1, sizes.size() - 1);  // [a,h]
 
   int64_t second_dim = 1;
   for (auto dim : other_shape) {
     second_dim *= dim;
   }
 
-  at::Tensor flat_input = torch::flatten(input, 1);
+  at::Tensor flat_input = torch::flatten(input, 1);  // [bs,ah]
   torch::Tensor repeated_indices =
       indices.unsqueeze(1).expand({indices.size(0), second_dim});
   at::Tensor gather_input = torch::gather(flat_input, 0, repeated_indices);

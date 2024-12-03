@@ -53,6 +53,8 @@
 #include "torch_xla/csrc/ops/flash_attention_forward.h"
 #include "torch_xla/csrc/ops/flash_attention_varlen_backward.h"
 #include "torch_xla/csrc/ops/flash_attention_varlen_forward.h"
+#include "torch_xla/csrc/ops/flash_attention_varlen_position_ids_backward.h"
+#include "torch_xla/csrc/ops/flash_attention_varlen_position_ids_forward.h"
 #include "torch_xla/csrc/ops/flip.h"
 #include "torch_xla/csrc/ops/gather.h"
 #include "torch_xla/csrc/ops/generic.h"
@@ -675,6 +677,25 @@ std::vector<XLATensorPtr> flash_attention_varlen_forward(
   }
 }
 
+std::vector<XLATensorPtr> flash_attention_varlen_position_ids_forward(
+    const XLATensorPtr& q, const XLATensorPtr& k, const XLATensorPtr& v,
+    const XLATensorPtr& position_ids, const XLATensorPtr& alibi_slopes,
+    const std::string& params) {
+  if (alibi_slopes) {
+    torch::lazy::NodePtr node =
+        torch::lazy::MakeNode<FlashAttentionVarlenPositionIdsForward>(
+            q->GetIrValue(), k->GetIrValue(), v->GetIrValue(),
+            position_ids->GetIrValue(), alibi_slopes->GetIrValue(), params);
+    return q->MakeOutputTensors(node, /*inherit_logical_type=*/false);
+  } else {
+    torch::lazy::NodePtr node =
+        torch::lazy::MakeNode<FlashAttentionVarlenPositionIdsForward>(
+            q->GetIrValue(), k->GetIrValue(), v->GetIrValue(),
+            position_ids->GetIrValue(), params);
+    return q->MakeOutputTensors(node, /*inherit_logical_type=*/false);
+  }
+}
+
 std::vector<XLATensorPtr> flash_attention_backward(
     const XLATensorPtr& dout, const XLATensorPtr& q, const XLATensorPtr& k,
     const XLATensorPtr& v, const XLATensorPtr& out,
@@ -712,6 +733,31 @@ std::vector<XLATensorPtr> flash_attention_varlen_backward(
   } else {
     torch::lazy::NodePtr node =
         torch::lazy::MakeNode<FlashAttentionVarlenBackward>(
+            dout->GetIrValue(), q->GetIrValue(), k->GetIrValue(),
+            v->GetIrValue(), out->GetIrValue(), softmax_lse->GetIrValue(),
+            cu_seqlens_q->GetIrValue(), cu_seqlens_k->GetIrValue(),
+            rng_state->GetIrValue(), params);
+    return dout->MakeOutputTensors(node, /*inherit_logical_type=*/false);
+  }
+}
+
+std::vector<XLATensorPtr> flash_attention_varlen_position_ids_backward(
+    const XLATensorPtr& dout, const XLATensorPtr& q, const XLATensorPtr& k,
+    const XLATensorPtr& v, const XLATensorPtr& out,
+    const XLATensorPtr& softmax_lse, const XLATensorPtr& cu_seqlens_q,
+    const XLATensorPtr& cu_seqlens_k, const XLATensorPtr& rng_state,
+    const XLATensorPtr& alibi_slopes, const std::string& params) {
+  if (alibi_slopes) {
+    torch::lazy::NodePtr node =
+        torch::lazy::MakeNode<FlashAttentionVarlenPositionIdsBackward>(
+            dout->GetIrValue(), q->GetIrValue(), k->GetIrValue(),
+            v->GetIrValue(), out->GetIrValue(), softmax_lse->GetIrValue(),
+            cu_seqlens_q->GetIrValue(), cu_seqlens_k->GetIrValue(),
+            rng_state->GetIrValue(), alibi_slopes->GetIrValue(), params);
+    return dout->MakeOutputTensors(node, /*inherit_logical_type=*/false);
+  } else {
+    torch::lazy::NodePtr node =
+        torch::lazy::MakeNode<FlashAttentionVarlenPositionIdsBackward>(
             dout->GetIrValue(), q->GetIrValue(), k->GetIrValue(),
             v->GetIrValue(), out->GetIrValue(), softmax_lse->GetIrValue(),
             cu_seqlens_q->GetIrValue(), cu_seqlens_k->GetIrValue(),
