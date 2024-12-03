@@ -87,10 +87,10 @@ void custom_call_flash_attention_varlen_position_ids_backward(
   at::Tensor softmax_lse =
       torch::from_blob(buffers[5], {params.b, params.h, params.seqlen_q},
                        opts.dtype(torch::kFloat));
-  at::Tensor cu_seqlens_q = torch::from_blob(buffers[6], {params.b*params.seqlen_q + 1},
-                                             opts.dtype(torch::kInt32));
-  at::Tensor cu_seqlens_k = torch::from_blob(buffers[7], {params.b*params.seqlen_k + 1},
-                                             opts.dtype(torch::kInt32));
+  at::Tensor cu_seqlens_q = torch::from_blob(
+      buffers[6], {params.b * params.seqlen_q + 1}, opts.dtype(torch::kInt32));
+  at::Tensor cu_seqlens_k = torch::from_blob(
+      buffers[7], {params.b * params.seqlen_k + 1}, opts.dtype(torch::kInt32));
 
   // Outputs
   at::Tensor dq =

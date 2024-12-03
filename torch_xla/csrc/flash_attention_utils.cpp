@@ -388,14 +388,17 @@ FlashAttentionBackwardParams get_flash_attention_backward_params(
     TORCH_CHECK(cu_seqlens_q.value().is_contiguous());
     TORCH_CHECK(cu_seqlens_k.value().is_contiguous());
     TORCH_CHECK(batch_size == cu_seqlens_q.value().numel() - 1 ||
-                batch_size == 1); // now pack qkv batch size only support 1, maybe need to change in the future
+                batch_size == 1);  // now pack qkv batch size only support 1,
+                                   // maybe need to change in the future
     TORCH_CHECK(
         cu_seqlens_q.value().sizes() == torch::IntArrayRef({batch_size + 1}) ||
-            cu_seqlens_q.value().sizes() == torch::IntArrayRef({seqlen_q*batch_size + 1}),
+            cu_seqlens_q.value().sizes() ==
+                torch::IntArrayRef({seqlen_q * batch_size + 1}),
         "cu_seqlens_q shape should be batch_size+1 or seqlen_q+1");
     TORCH_CHECK(
         cu_seqlens_k.value().sizes() == torch::IntArrayRef({batch_size + 1}) ||
-            cu_seqlens_k.value().sizes() == torch::IntArrayRef({seqlen_k*batch_size + 1}),
+            cu_seqlens_k.value().sizes() ==
+                torch::IntArrayRef({seqlen_k * batch_size + 1}),
         "cu_seqlens_k shape should be batch_size+1 or seqlen_k+1");
   }
 
@@ -448,12 +451,11 @@ at::Tensor cu_seqlens_to_indices(const at::Tensor& cu_seqlens, int batch_size,
   std::array<int64_t, 2> shape = {batch_size, seqlen};
 
   auto opts = torch::TensorOptions().dtype(scalar_type).device(torch::kCUDA);
-  torch::Tensor rows = torch::arange(shape[0], opts.dtype(torch::kInt32))
-                           .unsqueeze(1);
-  torch::Tensor cols = torch::arange(shape[1], opts.dtype(torch::kInt32))
-                           .unsqueeze(0);
-  torch::Tensor mask =
-      cols < nonzero_counts.unsqueeze(1);
+  torch::Tensor rows =
+      torch::arange(shape[0], opts.dtype(torch::kInt32)).unsqueeze(1);
+  torch::Tensor cols =
+      torch::arange(shape[1], opts.dtype(torch::kInt32)).unsqueeze(0);
+  torch::Tensor mask = cols < nonzero_counts.unsqueeze(1);
   max_seqlen_in_batch = torch::sum(mask, {1}).max().item<int>();
 
   torch::Tensor matrix = torch::zeros(shape, opts.dtype(torch::kInt32));
@@ -492,9 +494,14 @@ torch::Tensor unpad_softmax_lse(
       cu_seqlens_to_indices(valid_cu_seqlens, batch_size, max_seqlen,
                             torch::kInt64, max_seqlen_in_batch, total);
   at::Tensor result = at::empty({total, nhead}, pad_softmax_lse.options());
-  result.copy_(pad_softmax_lse.transpose(1, 2)
-                   .reshape({batch_size * max_seqlen, nhead})
-                   .index({indices, torch::indexing::Slice()})); // if packed tensor's batch size > 1 is supported in the future, need to modify here in the future
+  result.copy_(
+      pad_softmax_lse.transpose(1, 2)
+          .reshape({batch_size * max_seqlen, nhead})
+          .index({indices,
+                  torch::indexing::Slice()}));  // if packed tensor's batch size
+                                                // > 1 is supported in the
+                                                // future, need to modify here
+                                                // in the future
   return result.transpose(0, 1).unsqueeze(0);
 }
 
