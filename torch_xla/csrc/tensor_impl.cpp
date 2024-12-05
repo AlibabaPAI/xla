@@ -133,10 +133,13 @@ void XLATensorImpl::shallow_copy_from(
 }
 
 at::IntArrayRef XLATensorImpl::sizes_custom() const {
-  XLA_CHECK(!has_symbolic_sizes_strides_)
-      << "Cannot call sizes_custom() on an XLA tensor with symbolic "
-         "sizes/strides";
   const_cast<XLATensorImpl*>(this)->SetupSizeProperties();
+  // Temporarily support obtaining the values of symbolic sizes
+  // This is to ensure that flash_attention_utils can operate correctly
+  // TODO: we should avoid this
+  if (has_symbolic_sizes_strides_) {
+    return sizes_and_strides_.sizes_arrayref();
+  }
   return sizes_default();
 }
 
@@ -157,6 +160,12 @@ c10::SymInt XLATensorImpl::sym_numel_custom() const {
 
 at::IntArrayRef XLATensorImpl::strides_custom() const {
   const_cast<XLATensorImpl*>(this)->SetupSizeProperties();
+  // Temporarily support obtaining the values of symbolic strides
+  // This is to ensure that flash_attention_utils can operate correctly
+  // TODO: we should avoid this
+  if (has_symbolic_sizes_strides_) {
+    return sizes_and_strides_.strides_arrayref();
+  }
   return strides_default();
 }
 

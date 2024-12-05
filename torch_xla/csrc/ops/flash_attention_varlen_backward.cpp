@@ -17,12 +17,20 @@
 namespace torch_xla {
 namespace {
 
+xla::Shape xla_shape_like(const torch::lazy::Value& input) {
+  auto input_xla_shape = GetXlaShape(input);
+  return xla::ShapeUtil::MakeShape(
+      input_xla_shape.element_type(), input_xla_shape.dimensions(),
+      xla::SpanToVector(input_xla_shape.dynamic_dimensions()));
+}
+
 xla::Shape NodeOutputShape(const torch::lazy::Value& q,
                            const torch::lazy::Value& k,
                            const torch::lazy::Value& v,
                            const torch::lazy::Value& softmax_lse) {
-  return xla::ShapeUtil::MakeTupleShape(
-      {shape_like(q), shape_like(k), shape_like(v), shape_like(softmax_lse)});
+  return xla::ShapeUtil::MakeTupleShape({xla_shape_like(q), xla_shape_like(k),
+                                         xla_shape_like(v),
+                                         xla_shape_like(softmax_lse)});
 }
 
 void run_mha_bwd(Flash_bwd_params& params, cudaStream_t stream,

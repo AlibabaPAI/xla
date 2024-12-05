@@ -32,6 +32,7 @@ ptxla_cc_library(
         "@torch//:libtorch_cuda",
         "@flash_attn//:headers",
         "@flash_attn//:flash_attn_cuda",
+        "//torch_xla/csrc:flash_attn_utils",
     ],
     copts = [
         "-DGOOGLE_CUDA",

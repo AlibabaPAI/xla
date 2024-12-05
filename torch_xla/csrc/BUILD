@@ -68,7 +68,6 @@ ptxla_cc_library(
         "xla_lower_util.cpp",
         "xla_op_builder.cpp",
         "xla_sharding_util.cpp",
-        "flash_attention_utils.cpp",
         ":RegisterAutogradXLA.cpp",
         ":RegisterXLA.cpp",
         ":XLANativeFunctions.cpp",
@@ -112,13 +111,13 @@ ptxla_cc_library(
         ":LazyIr.h",
         ":LazyNonNativeIr.h",
         ":XLANativeFunctions.h",
-        "flash_attention_utils.h",
     ] + glob(["ops/*.h"]),
     deps = [
         ":aten_cpu_fallback",
         ":device",
         ":dtype",
         ":einsum_utilities",
+        ":flash_attn_utils",
         ":ir",
         ":ir_builder",
         ":layout_manager",
@@ -345,5 +344,19 @@ ptxla_cc_library(
     deps = [
         "//torch_xla/csrc/runtime:computation_client",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "flash_attn_utils",
+    srcs = ["flash_attention_utils.cpp"],
+    hdrs = ["flash_attention_utils.h"],
+    deps = [
+        ":ir",
+        ":ir_builder",
+        "@com_google_absl//absl/strings",
+        "@flash_attn//:headers",
+        "@flash_attn//:flash_attn_cuda",
+        "@local_config_python//:python_headers",
     ],
 )
