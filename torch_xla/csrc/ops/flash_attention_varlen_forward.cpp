@@ -17,16 +17,23 @@
 namespace torch_xla {
 namespace {
 xla::Shape NodeOutputShape(const torch::lazy::Value& q) {
-  auto q_shape = xla::SpanToVector(GetXlaShape(q).dimensions());
+  auto q_xla_shape = GetXlaShape(q);
+  auto q_dynamic_dimensions =
+      xla::SpanToVector(q_xla_shape.dynamic_dimensions());
+  auto q_shape = xla::SpanToVector(q_xla_shape.dimensions());
+
   xla::Shape softmax_lse_shape = xla::ShapeUtil::MakeShape(
-      xla::PrimitiveType::F32,
-      {q_shape[0], q_shape[2],
-       q_shape[1]});  // batch_size, num_heads, seqlen_q(padding)
+      xla::PrimitiveType::F32, {q_shape[0], q_shape[2], q_shape[1]},
+      {q_dynamic_dimensions[0], q_dynamic_dimensions[2],
+       q_dynamic_dimensions[1]});  // batch_size, num_heads, seqlen_q(padding)
   xla::Shape rng_state_shape =
       xla::ShapeUtil::MakeShape(xla::PrimitiveType::S64, {2});
-  xla::Shape cu_seqlens_shape =
-      xla::ShapeUtil::MakeShape(xla::PrimitiveType::S32, {q_shape[0] + 1});
-  return xla::ShapeUtil::MakeTupleShape({softmax_lse_shape, shape_like(q),
+  xla::Shape cu_seqlens_shape = xla::ShapeUtil::MakeShape(
+      xla::PrimitiveType::S32, {q_shape[0] + 1}, {q_dynamic_dimensions[0]});
+  xla::Shape output_shape =
+      xla::ShapeUtil::MakeShape(q_xla_shape.element_type(),
+                                q_xla_shape.dimensions(), q_dynamic_dimensions);
+  return xla::ShapeUtil::MakeTupleShape({softmax_lse_shape, output_shape,
                                          rng_state_shape, cu_seqlens_shape,
                                          cu_seqlens_shape});
 }
