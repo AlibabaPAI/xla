@@ -110,7 +110,7 @@ class PjRtComputationClient : public ComputationClient {
             xla::PjRtLocalDeviceId(local_device_id));
     XLA_CHECK(pjrt_device.ok()) << "Failed to get a PjRt device.";
     absl::StatusOr<std::intptr_t> stream =
-        pjrt_device.value()->GetStreamForExternalReadyEvents();
+        pjrt_device.value()->GetLocalComputeStream();
     XLA_CHECK(stream.ok()) << "Failed to get a stream.";
     return stream.value();
   }
