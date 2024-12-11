@@ -2855,6 +2855,8 @@ at::Tensor XLANativeFunctions::slice_copy_symint(
     const at::Tensor& self, int64_t dim, c10::optional<c10::SymInt> start,
     c10::optional<c10::SymInt> end, c10::SymInt step) {
   TORCH_LAZY_FN_COUNTER_TIMED_TRACING("xla::");
+  // dim maybe -1
+  dim = torch::lazy::GetCanonicalDimensionIndex(dim, self.dim());
   c10::SymInt start_val = start.has_value() ? start.value() : 0;
   c10::SymInt end_val = end.has_value() ? end.value() : self.sym_sizes()[dim];
   if (!start_val.is_symbolic() && start_val < 0) {
