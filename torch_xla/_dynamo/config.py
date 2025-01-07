@@ -14,4 +14,5 @@ use_call_computation = False
 # The model outside dynamo is on cuda or not.
 outside_on_cuda = False
 
+# Whether to mark step after each layer when early_sync happens.
 mark_step_after_layer_if_early_sync = False
