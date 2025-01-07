@@ -6,7 +6,7 @@ import torch_xla
 skip_input_data_check = False
 
 # Whether to transform the FX graph into an XLA computation
-# and creating a call node for that computation. This allows XLA to trace 
+# and creating a call node for that computation. This allows XLA to trace
 # a more extensive computation graph, potentially leading to greater
 # optimization opportunities.
 use_call_computation = False

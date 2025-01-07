@@ -336,7 +336,8 @@ class XlaFullyShardedDataParallel(nn.Module):
     is_forward_defined = (
         hasattr(module, "forward") and hasattr(module.forward, "__func__") and
         module.forward.__func__ != torch.nn.Module.forward)
-    if not is_forward_defined and not isinstance(module, torch._dynamo.OptimizedModule):
+    if not is_forward_defined and not isinstance(module,
+                                                 torch._dynamo.OptimizedModule):
       raise RuntimeError(
           "The module wrapped by FSDP *must define a `forward` method and call it "
           "during the module's forward pass for FSDP to work correctly.* "
@@ -996,7 +997,8 @@ class XlaFullyShardedDataParallel(nn.Module):
       self._exec_state.record_forward(self)
       next_module = self._exec_state.get_prefetch_module()
       if next_module:
-        next_module._rebuild_full_params(apply_opt_barrier=self.optimization_barrier_in_forward)
+        next_module._rebuild_full_params(
+            apply_opt_barrier=self.optimization_barrier_in_forward)
 
     # Start of a forward pass.
     self.training_state = TrainingState.FORWARD

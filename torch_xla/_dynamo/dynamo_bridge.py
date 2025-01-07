@@ -167,7 +167,7 @@ def _maybe_move_tensors_to_device(tensors: tuple,
       # If the input cuda tensor requires gradient, we need to call detach. Otherwise, we'd get the error "RuntimeError: Can't export tensors that require gradient, use tensor.detach()"
       moved_tensor = torch_xla_dlpack.from_dlpack(tensor.detach())
     elif zero_copy_enabled and tensor.device.type == 'xla' and target_device.type == 'cuda':
-      # mark_step is need to make sure the pjrt buffer is valid.	
+      # mark_step is need to make sure the pjrt buffer is valid.
       xm.mark_step()
       moved_tensor = torch_xla_dlpack.from_xla_cuda_to_cuda(tensor)
     else:
@@ -260,9 +260,7 @@ class SpecialReturnHandler:
     self.deduped_trace_outputs = self.deduper.dedup(trace_outputs)
 
     # record the output that is also a input
-    trace_inputs_id2pos = {
-        id(x): pos for pos, x in enumerate(trace_inputs)
-    }
+    trace_inputs_id2pos = {id(x): pos for pos, x in enumerate(trace_inputs)}
     self.trace_outputs_pos_to_inputs_pos = []
     for out_pos, out in enumerate(self.deduped_trace_outputs):
       in_pos = trace_inputs_id2pos.get(id(out), None)
@@ -470,7 +468,8 @@ def extract_graph_helper(xla_model: torch.fx.GraphModule,
     graph_hash = None
     if config.use_call_computation:
       graph_hash = None
-      xla_computation = torch_xla._XLAC._xla_create_computation("dynamo_call", args_and_out_tensor_only)
+      xla_computation = torch_xla._XLAC._xla_create_computation(
+          "dynamo_call", args_and_out_tensor_only)
     elif len(args_and_out_tensor_only) > 0:
       graph_hash = torch_xla._XLAC._get_graph_hash(args_and_out_tensor_only)
       # compiles and cache graph rooted at tensors in 'args_and_out_tensor_only'
@@ -506,7 +505,8 @@ def extract_graph_helper(xla_model: torch.fx.GraphModule,
   vars_to_return = (xla_args_sharding_spec, len(args_and_out), graph_hash,
                     arg_index_to_need_update_index, none_remover,
                     graph_input_matcher, special_return_handler,
-                    xla_args_need_update, xla_args_dtype, xla_computation, arg_index_to_update_output_index)
+                    xla_args_need_update, xla_args_dtype, xla_computation,
+                    arg_index_to_update_output_index)
   # populate the cache
   sym_constants_to_graph_vars[sym_constants] = vars_to_return
 
@@ -538,10 +538,9 @@ def extract_internal(xla_model: torch.fx.GraphModule):
 
   (xla_args_sharding_spec, len_args_and_out, graph_hash,
    arg_index_to_need_update_index, none_remover, graph_input_matcher,
-   special_return_handler,
-   xla_args_need_update, xla_args_dtype, xla_computation,
-   arg_index_to_update_output_index) = extract_graph_helper(xla_model,
-                                                sym_constants_to_graph_vars)
+   special_return_handler, xla_args_need_update, xla_args_dtype,
+   xla_computation, arg_index_to_update_output_index) = extract_graph_helper(
+       xla_model, sym_constants_to_graph_vars)
   skip_checking_input_sharding_threashold = xu.getenv_as(
       'XLA_DYNAMO_INPUT_SHARDING_CHECK_THRESHOLD', int, 5)
 
@@ -566,14 +565,15 @@ def extract_internal(xla_model: torch.fx.GraphModule):
     if sym_constants in sym_constants_to_graph_vars:
       (xla_args_sharding_spec, len_args_and_out, graph_hash,
        arg_index_to_need_update_index, none_remover, graph_input_matcher,
-       special_return_handler,
-       xla_args_need_update, xla_args_dtype, xla_computation,
-       arg_index_to_update_output_index) = sym_constants_to_graph_vars[sym_constants]
+       special_return_handler, xla_args_need_update, xla_args_dtype,
+       xla_computation, arg_index_to_update_output_index
+      ) = sym_constants_to_graph_vars[sym_constants]
     else:
       xla_model.xla_args = args
       (xla_args_sharding_spec, len_args_and_out, graph_hash,
        arg_index_to_need_update_index, none_remover, graph_input_matcher,
-       special_return_handler, xla_args_need_update, xla_args_dtype, xla_computation,
+       special_return_handler, xla_args_need_update, xla_args_dtype,
+       xla_computation,
        arg_index_to_update_output_index) = extract_graph_helper(
            xla_model, sym_constants_to_graph_vars)
     if hasattr(xla_model, 'xla_args'):
@@ -638,8 +638,9 @@ def extract_internal(xla_model: torch.fx.GraphModule):
     if config.use_call_computation:
       assert not is_cuda_args
       assert xla_computation is not None
-      res = torch_xla._XLAC._xla_call_computation("xla::_call_computation", graph_input,
-                                                   xla_computation, xla_args_tensor_only, arg_index_to_update_output_index)
+      res = torch_xla._XLAC._xla_call_computation(
+          "xla::_call_computation", graph_input, xla_computation,
+          xla_args_tensor_only, arg_index_to_update_output_index)
     else:
       res = torch_xla._XLAC._run_cached_graph(graph_hash, graph_input)
       xm.wait_device_ops()
@@ -794,7 +795,6 @@ class XLAConstructorMoverPass(ConstructorMoverPass):
       kwargs["device"] = "cuda"
       node.kwargs = kwargs
 
-
   def __call__(self, graph: torch.fx.Graph, move_xla_to_cuda=False) -> None:
     if move_xla_to_cuda:
       self.move_xla_to_cuda(graph)
@@ -870,7 +870,11 @@ def partition_fx_graph_for_cpu_fallback(xla_model, xla_args, all_xla_args,
 
   last_node = list(reversed(partitioned_graph.graph.nodes))[0]
   with partitioned_graph.graph.inserting_after(last_node):
-    partitioned_graph.graph.create_node(op='output', target='output', args=return_node.args, type_expr=return_node.type)
+    partitioned_graph.graph.create_node(
+        op='output',
+        target='output',
+        args=return_node.args,
+        type_expr=return_node.type)
   partitioned_graph.graph.erase_node(return_node)
   InputCollector(partitioned_graph).run(*xla_args)
 
