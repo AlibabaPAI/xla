@@ -782,6 +782,31 @@ std::vector<XLATensorPtr> user_computation(
                                            /*inherit_logical_type=*/false);
 }
 
+std::vector<XLATensorPtr> user_computation_with_update_(
+    const std::string& opname, absl::Span<const XLATensorPtr> inputs,
+    runtime::ComputationClient::ComputationPtr computation,
+    std::vector<XLATensorPtr>& orig_inputs,
+    absl::flat_hash_map<int, int>& arg_index_to_update_output_index) {
+  XLA_CHECK(!inputs.empty());
+  std::vector<torch::lazy::Value> input_values;
+  for (auto& input : inputs) {
+    input_values.push_back(input->GetIrValue());
+  }
+  torch::lazy::NodePtr node = torch::lazy::MakeNode<UserComputation>(
+      torch::lazy::OpKind::Get(opname), input_values, std::move(computation));
+
+  for (auto& pair : arg_index_to_update_output_index) {
+    XLA_CHECK(pair.first < orig_inputs.size());
+    XLA_CHECK(pair.second < node->num_outputs());
+    auto update = torch::lazy::Value(node, pair.second);
+    orig_inputs[pair.first]->SetInPlaceIrValue(update);
+  }
+  // Cast can be one of the user computation and we don't want to inherit the
+  // logical_element_type in this case
+  return inputs.front()->MakeOutputTensors(node,
+                                           /*inherit_logical_type=*/false);
+}
+
 //////////////////////////////////////////////////////////////////////////////
 // ATEN operators follows here, listed in alphabetical order.
 //////////////////////////////////////////////////////////////////////////////

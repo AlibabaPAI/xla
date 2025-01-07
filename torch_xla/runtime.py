@@ -260,6 +260,7 @@ def use_spmd(auto: Optional[bool] = False):
     os.environ["XLA_AUTO_SPMD"] = "1"
 
 
+@functools.lru_cache()
 @requires_pjrt
 def is_spmd():
   """Returns if SPMD is set for execution."""

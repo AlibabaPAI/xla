@@ -6,6 +6,18 @@ from torch.utils.checkpoint import check_backward_validity, detach_variable
 import torch_xla
 import torch_xla.core.xla_model as xm
 from torch_xla.utils.checkpoint import checkpoint
+import torch_xla._dynamo.config as dynamo_config
+
+_prev_early_sync_counter = 0
+
+def exists_early_sync():
+  import torch_xla.debug.metrics as metrics
+  global _prev_early_sync_counter
+  current = metrics.counter_value('EarlySyncLiveTensorsCount')
+  if current and current > _prev_early_sync_counter:
+    _prev_early_sync_counter = current
+    return True
+  return False
 
 
 def checkpoint_module(module):
@@ -108,15 +120,15 @@ class XLAPatchedLinear(torch.autograd.Function):
       input_flat = input
       grad_output_flat = grad_output
 
-    if ctx.needs_input_grad[0]:
+    if torch.compiler.is_dynamo_compiling() or ctx.needs_input_grad[0]:
       grad_input_flat = grad_output_flat.mm(weight)
       if input_dim > 2:
         grad_input = grad_input_flat.view(*input.size())
       else:
         grad_input = grad_input_flat
-    if ctx.needs_input_grad[1]:
+    if torch.compiler.is_dynamo_compiling() or ctx.needs_input_grad[1]:
       grad_weight = grad_output_flat.t().mm(input_flat)
-    if bias is not None and ctx.needs_input_grad[2]:
+    if bias is not None and (torch.compiler.is_dynamo_compiling() or ctx.needs_input_grad[2]):
       grad_bias = grad_output_flat.sum(0)
 
     return grad_input, grad_weight, grad_bias
@@ -214,6 +226,11 @@ class AutogradFunction(torch.autograd.Function):
 
     ctx.save_for_backward(*(tensor_inputs + tensor_outputs))
     outputs = _apply_to_tensors(lambda t: t.clone().detach(), outputs)
+    if dynamo_config.mark_step_after_layer_if_early_sync and exists_early_sync():
+      ctx.mark_step = True
+      xm.mark_step(reset_scope=False)
+    else:
+      ctx.mark_step = False
 
     return outputs
 
@@ -253,6 +270,8 @@ class AutogradFunction(torch.autograd.Function):
     grads = tuple(
         inp.grad if isinstance(inp, torch.Tensor) else None for inp in inputs)
 
+    if ctx.mark_step:
+      xm.mark_step(reset_scope=False)
     return (None,) + grads
 
 

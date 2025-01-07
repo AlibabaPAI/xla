@@ -38,6 +38,7 @@ from .xla_flatten_params_wrapper import XlaFlattenParamsWrapper
 from .utils import dummy_all_gather, dummy_all_reduce, dummy_reduce_scatter, apply_xla_patch_to_nn_linear, autograd_module, get_tensor_id
 from .wrap import recursive_wrap
 from ._init_utils import _materialize_module
+from ._exec_utils import ExecState
 
 import os
 
@@ -146,6 +147,11 @@ class XlaFullyShardedDataParallel(nn.Module):
       opt_flatten_overlap (bool, Optional):
           if ``True``, optimize the overlap of computation and communication.
           This option is only enabled when flatten_parameters is enabled
+      forward_prefetch (bool, Optional):
+          if True, then FSDP explicitly prefetches the next forward-pass
+          all-gather before the current forward computation. This should only be
+          used for static-graph models since the prefetching follows the first
+          iteration's execution order.
       sync_module_states (bool, Optional):
           If ``True``, then each FSDP module will broadcast module parameters
           and buffers from rank 0 to ensure that they are replicated across
@@ -292,6 +298,7 @@ class XlaFullyShardedDataParallel(nn.Module):
       reshard_after_forward: bool = True,
       flatten_parameters: bool = False,
       opt_flatten_overlap: bool = False,
+      forward_prefetch: bool = False,
       sync_module_states: bool = False,
       execute_sharding_on_init: bool = True,
       optimization_barrier_in_forward: bool = True,
@@ -329,7 +336,7 @@ class XlaFullyShardedDataParallel(nn.Module):
     is_forward_defined = (
         hasattr(module, "forward") and hasattr(module.forward, "__func__") and
         module.forward.__func__ != torch.nn.Module.forward)
-    if not is_forward_defined:
+    if not is_forward_defined and not isinstance(module, torch._dynamo.OptimizedModule):
       raise RuntimeError(
           "The module wrapped by FSDP *must define a `forward` method and call it "
           "during the module's forward pass for FSDP to work correctly.* "
@@ -356,6 +363,7 @@ class XlaFullyShardedDataParallel(nn.Module):
           reshard_after_forward=reshard_after_forward,
           flatten_parameters=flatten_parameters,
           opt_flatten_overlap=opt_flatten_overlap,
+          forward_prefetch=forward_prefetch,
           sync_module_states=sync_module_states,
           execute_sharding_on_init=execute_sharding_on_init,
           optimization_barrier_in_forward=optimization_barrier_in_forward,
@@ -404,6 +412,10 @@ class XlaFullyShardedDataParallel(nn.Module):
     self.fp32_reduce_scatter = fp32_reduce_scatter
 
     self.opt_flatten_overlap = opt_flatten_overlap
+    self.forward_prefetch = forward_prefetch
+    if forward_prefetch:
+      assert opt_flatten_overlap and flatten_parameters, \
+        "forward_prefetch requires flatten_parameters and opt_flatten_overlap"
 
     # Make sharded parameter sizes a multiple of 128 for efficient all_gather ops on TPUs
     # (see https://github.com/pytorch/xla/issues/3510#issuecomment-1101739677 for details)
@@ -900,6 +912,7 @@ class XlaFullyShardedDataParallel(nn.Module):
     self.reshard_after_forward = self._orig_reshard_after_forward
     self._delayed_reduce_scatter: Optional[Dict] = None
     self._backward_opt_grads: Optional[Dict] = None
+    self._exec_state: Optional[ExecState] = None
 
   def _lazy_init(self) -> None:
     """
@@ -965,6 +978,7 @@ class XlaFullyShardedDataParallel(nn.Module):
     self._backward_opt_barrier_tensor_ids = set()
     self._delayed_reduce_scatter = {}
     self._backward_opt_grads = {}
+    self._exec_state = ExecState()
     for n, m in self.named_modules():
       if n != "" and isinstance(m, XlaFullyShardedDataParallel):
         m._output_pre_backward_hook_registered = self._output_pre_backward_hook_registered
@@ -972,9 +986,17 @@ class XlaFullyShardedDataParallel(nn.Module):
         m._backward_opt_barrier_tensor_ids = self._backward_opt_barrier_tensor_ids
         m._delayed_reduce_scatter = self._delayed_reduce_scatter
         m._backward_opt_grads = self._backward_opt_grads
+        m._exec_state = self._exec_state
 
+  @torch.compiler.disable
   def forward(self, *args: Any, **kwargs: Any) -> torch.Tensor:
     self._lazy_init()
+
+    if self.forward_prefetch and not self._is_root:
+      self._exec_state.record_forward(self)
+      next_module = self._exec_state.get_prefetch_module()
+      if next_module:
+        next_module._rebuild_full_params(apply_opt_barrier=self.optimization_barrier_in_forward)
 
     # Start of a forward pass.
     self.training_state = TrainingState.FORWARD
@@ -1039,6 +1061,9 @@ class XlaFullyShardedDataParallel(nn.Module):
 
     # Done with a forward pass.
     self.training_state = TrainingState.IDLE
+
+    if self.forward_prefetch and self._is_root:
+      self._exec_state.next_iter()
 
     return outputs
 

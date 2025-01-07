@@ -416,12 +416,14 @@ def extract_graph_helper(xla_model: torch.fx.GraphModule,
       [tensor for _, tensor in index_and_xla_tensor_args])
   xla_args_need_update = []
   arg_index_to_need_update_index = {}
+  arg_index_to_update_output_index = {}
   for i, need_update in enumerate(xla_args_need_update_bool):
     # Don't add inplace updated argument to the list if it's already
     # being returned
     index, tensor = index_and_xla_tensor_args[i]
     if need_update and id(tensor) not in xla_out_ids:
       arg_index_to_need_update_index[index] = len(xla_args_need_update)
+      arg_index_to_update_output_index[i] = len(xla_args_need_update)
       xla_args_need_update.append(tensor)
 
   args_and_out = tuple(xla_args_need_update) + tuple(xla_out)
@@ -479,9 +481,12 @@ def extract_graph_helper(xla_model: torch.fx.GraphModule,
 
   with alias_with_buffer_donor_config() as saved_config:
     # calculate graph hash
-    if len(args_and_out_tensor_only) == 0:
+    xla_computation = None
+    graph_hash = None
+    if config.use_call_computation:
       graph_hash = None
-    else:
+      xla_computation = torch_xla._XLAC._xla_create_computation("dynamo_call", args_and_out_tensor_only)
+    elif len(args_and_out_tensor_only) > 0:
       graph_hash = torch_xla._XLAC._get_graph_hash(args_and_out_tensor_only)
       # compiles and cache graph rooted at tensors in 'args_and_out_tensor_only'
       torch_xla._XLAC._xla_warm_up_cache(args_and_out_tensor_only, [])
@@ -516,7 +521,7 @@ def extract_graph_helper(xla_model: torch.fx.GraphModule,
   vars_to_return = (xla_args_sharding_spec, len(args_and_out), graph_hash,
                     arg_index_to_need_update_index, none_remover,
                     graph_input_matcher, special_return_handler,
-                    xla_args_need_update, xla_args_dtype)
+                    xla_args_need_update, xla_args_dtype, xla_computation, arg_index_to_update_output_index)
   # populate the cache
   sym_constants_to_graph_vars[sym_constants] = vars_to_return
 
@@ -549,7 +554,8 @@ def extract_internal(xla_model: torch.fx.GraphModule):
   (xla_args_sharding_spec, len_args_and_out, graph_hash,
    arg_index_to_need_update_index, none_remover, graph_input_matcher,
    special_return_handler,
-   xla_args_need_update, xla_args_dtype) = extract_graph_helper(xla_model,
+   xla_args_need_update, xla_args_dtype, xla_computation,
+   arg_index_to_update_output_index) = extract_graph_helper(xla_model,
                                                 sym_constants_to_graph_vars)
   skip_checking_input_sharding_threashold = xu.getenv_as(
       'XLA_DYNAMO_INPUT_SHARDING_CHECK_THRESHOLD', int, 5)
@@ -560,8 +566,6 @@ def extract_internal(xla_model: torch.fx.GraphModule):
     nonlocal sym_constants_to_graph_vars
     nonlocal graph_hash
 
-    if graph_hash is None:
-      return xla_model(*args)
 
     original_device: torch.device = _get_input_arg_device(args)
     is_cuda_args: bool = False
@@ -576,20 +580,27 @@ def extract_internal(xla_model: torch.fx.GraphModule):
       (xla_args_sharding_spec, len_args_and_out, graph_hash,
        arg_index_to_need_update_index, none_remover, graph_input_matcher,
        special_return_handler,
-       xla_args_need_update, xla_args_dtype) = sym_constants_to_graph_vars[sym_constants]
+       xla_args_need_update, xla_args_dtype, xla_computation,
+       arg_index_to_update_output_index) = sym_constants_to_graph_vars[sym_constants]
     else:
       xla_model.xla_args = args
       (xla_args_sharding_spec, len_args_and_out, graph_hash,
        arg_index_to_need_update_index, none_remover, graph_input_matcher,
-       special_return_handler, xla_args_need_update, xla_args_dtype) = extract_graph_helper(
+       special_return_handler, xla_args_need_update, xla_args_dtype, xla_computation,
+       arg_index_to_update_output_index) = extract_graph_helper(
            xla_model, sym_constants_to_graph_vars)
     if hasattr(xla_model, 'xla_args'):
       delattr(xla_model, 'xla_args')
+
+    if graph_hash is None and xla_computation is None:
+      return xla_model(*args)
 
     args = list(args)
     for index, arg in enumerate(args):
       if isinstance(arg, torch.Tensor) and arg.dtype != xla_args_dtype[index]:
         args[index] = arg.to(xla_args_dtype[index])
+      if isinstance(arg, torch.Tensor) and arg.device.type == "cpu":
+        args[index] = arg.to(xm.xla_device())
     if is_cuda_args:
       args = _maybe_move_tensors_to_device(args, xm.xla_device())
     xla_args_tensor_only, sym_constants = _split_xla_args_tensor_sym_constant(
@@ -633,15 +644,27 @@ def extract_internal(xla_model: torch.fx.GraphModule):
 
     # graph input should be tensor only
     graph_input = graph_input_matcher(xla_args_tensor_only)
-    res = torch_xla._XLAC._run_cached_graph(graph_hash, graph_input)
-    xm.wait_device_ops()
+
+    for a in graph_input:
+      torch._functionalize_sync(a)
+
+    if config.use_call_computation:
+      assert not is_cuda_args
+      assert xla_computation is not None
+      res = torch_xla._XLAC._xla_call_computation("xla::_call_computation", graph_input,
+                                                   xla_computation, xla_args_tensor_only, arg_index_to_update_output_index)
+    else:
+      res = torch_xla._XLAC._run_cached_graph(graph_hash, graph_input)
+      xm.wait_device_ops()
     res = special_return_handler.addDumbReturn(xla_args_tensor_only, res)
 
     assert len(res) == len_args_and_out, f"{len(res)} v.s. {len_args_and_out}"
     ncopy = 0
 
-    for arg_index, res_index in arg_index_to_need_update_index.items():
-      args[arg_index].copy_(res[res_index])
+    if not config.use_call_computation:
+      for arg_index, res_index in arg_index_to_need_update_index.items():
+        args[arg_index].copy_(res[res_index])
+        torch._functionalize_sync(args[arg_index])
 
     # First few elements might be xla_args that needs to be in place updated
     result = res[len(xla_args_need_update):]
@@ -649,9 +672,9 @@ def extract_internal(xla_model: torch.fx.GraphModule):
     none_remover.add_nones(result)
 
     # TODO: better fix this, input is not cuda tensor, output is cuda tensor
-    # if is_cuda_args:
-    original_device = torch.device(torch.cuda.current_device())
-    result = _maybe_move_tensors_to_device(tuple(result), original_device)
+    if is_cuda_args:
+      original_device = torch.device(torch.cuda.current_device())
+      result = _maybe_move_tensors_to_device(tuple(result), original_device)
 
     if len(result) == 1:
       return result[0]
@@ -696,14 +719,6 @@ class UnsupportedNodesCollector(torch.fx.Interpreter):
         # Not a tensor nor a container.
         return True
 
-      def have_any_tensor(value):
-        if isinstance(value, torch.Tensor):
-          return True
-        if isinstance(value, (list, tuple)):
-          return any(have_any_tensor(v) for v in value)
-        # Not a tensor nor a container.
-        return False
-
       # Check whether the current node is supported or not.
       #
       # A supported node has the following characteristics:
@@ -720,13 +735,7 @@ class UnsupportedNodesCollector(torch.fx.Interpreter):
 
       # If the current node is NOT supported, we add it to
       # the _unsupported_nodes list.
-      result_have_tensor = have_any_tensor(result)
-      args_have_tensor = any(
-          have_any_tensor(v)
-          for v in itertools.chain(args, kwargs.values()))
       if not (result_is_supported and args_are_supported):
-        self._unsupported_nodes.append(n)
-      elif not (result_have_tensor or args_have_tensor):
         self._unsupported_nodes.append(n)
 
     # Restore this metric counter
@@ -868,10 +877,21 @@ def partition_fx_graph_for_cpu_fallback(xla_model, xla_args, all_xla_args,
 
   # fuse partitions and exectue to collect inputs
   partitioned_graph = partitioner.fuse_partitions(partitions)
+  return_node = None
+  for n in partitioned_graph.graph.nodes:
+    if n.op == "output":
+      return_node = n
+      break
+
+  last_node = list(reversed(partitioned_graph.graph.nodes))[0]
+  with partitioned_graph.graph.inserting_after(last_node):
+    partitioned_graph.graph.create_node(op='output', target='output', args=return_node.args, type_expr=return_node.type)
+  partitioned_graph.graph.erase_node(return_node)
   InputCollector(partitioned_graph).run(*xla_args)
 
   # InputCollector might trigger in place ops, need to clear them here.
   _clear_pending_irs_on_args(all_xla_args_tensor_only, cloned_args)
+  torch_xla._XLAC._clear_pending_irs(str(xm.xla_device()))
 
   # compile each submodule and replace it with a call
   for node in partitioned_graph.graph.nodes:
@@ -893,6 +913,12 @@ def partition_fx_graph_for_cpu_fallback(xla_model, xla_args, all_xla_args,
 def extract_compiled_graph_helper(xla_model: torch.fx.GraphModule, xla_args):
   if _args_on_cuda(xla_args):
     xla_args = tuple(_maybe_move_tensors_to_device(xla_args, xm.xla_device()))
+
+  if not config.outside_on_cuda:
+    xla_args = list(xla_args)
+    for i, arg in enumerate(xla_args):
+      if isinstance(arg, torch.Tensor) and arg.device.type == "cpu":
+        xla_args[i] = arg.to(xm.xla_device())
 
   # Synchronize xla_args, so that each FunctionalTensorWrapper argument updates its
   # value reference before actually computing it.
