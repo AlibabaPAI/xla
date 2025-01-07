@@ -149,8 +149,6 @@ def _maybe_move_tensors_to_device(tensors: tuple,
                                   target_device: torch.device) -> tuple:
   assert target_device, "Moving tensors to None device not supported"
 
-  device_id = None
-
   moved_tensors = []
   for tensor in tensors:
     if not isinstance(tensor, torch.Tensor):
@@ -161,19 +159,15 @@ def _maybe_move_tensors_to_device(tensors: tuple,
       moved_tensors.append(tensor)
       continue
 
-    # if dynamo_debug:
-    #   print("Moving Tensor {} to device {}".format(tensor, target_device))
+    if dynamo_debug:
+      print("Moving Tensor {} to device {}".format(tensor, target_device))
 
     zero_copy_enabled = xu.getenv_as(xenv.ZERO_COPY_ENABLED, bool, defval=False)
     if zero_copy_enabled and tensor.device.type == 'cuda' and target_device.type == 'xla':
       # If the input cuda tensor requires gradient, we need to call detach. Otherwise, we'd get the error "RuntimeError: Can't export tensors that require gradient, use tensor.detach()"
-      device_type, device_id = tensor.__dlpack_device__()
       moved_tensor = torch_xla_dlpack.from_dlpack(tensor.detach())
     elif zero_copy_enabled and tensor.device.type == 'xla' and target_device.type == 'cuda':
       moved_tensor = torch_xla_dlpack.from_xla_cuda_to_cuda(tensor)
-      # HACK: The `torch_xla._XLAC._get_stream_for_cuda_device` requires a local device index, while the device index for xla tensors is always 0. 
-      # Meanwhile, dlpack uses the actual device index, so we use the device index of the converted CUDA tensor.
-      device_id = moved_tensor.device.index
     else:
       # Have to move to CPU before moving it to target device.
       cpu_device: torch.device = torch.device("cpu")
@@ -184,17 +178,6 @@ def _maybe_move_tensors_to_device(tensors: tuple,
     # with torch.to(..)
     moved_tensor.requires_grad = tensor.requires_grad
     moved_tensors.append(moved_tensor)
-
-  if zero_copy_enabled and device_id is not None:
-    stream = torch_xla._XLAC._get_stream_for_cuda_device(device_id)
-    stream = 1 if stream == 0 else stream
-    assert stream is None or type(stream) is int
-    external_stream = torch.cuda.ExternalStream(stream)
-    current_stream = torch.cuda.current_stream()
-    if external_stream != current_stream:
-      event = torch.cuda.Event()
-      event.record(current_stream)
-      external_stream.wait_event(event)
 
   return tuple(moved_tensors)
 
@@ -566,12 +549,14 @@ def extract_internal(xla_model: torch.fx.GraphModule):
     nonlocal sym_constants_to_graph_vars
     nonlocal graph_hash
 
-
     original_device: torch.device = _get_input_arg_device(args)
     is_cuda_args: bool = False
     if original_device:
       is_cuda_args = original_device.type == "cuda"
-
+    else:
+      is_cuda_args = config.outside_on_cuda
+      if is_cuda_args:
+        original_device = torch.device(torch.cuda.current_device())
 
     # See [Note: Dynamo real-time input-shape cache look-up] above.
     xla_args_tensor_only, sym_constants = _split_xla_args_tensor_sym_constant(
@@ -671,9 +656,7 @@ def extract_internal(xla_model: torch.fx.GraphModule):
 
     none_remover.add_nones(result)
 
-    # TODO: better fix this, input is not cuda tensor, output is cuda tensor
     if is_cuda_args:
-      original_device = torch.device(torch.cuda.current_device())
       result = _maybe_move_tensors_to_device(tuple(result), original_device)
 
     if len(result) == 1:
@@ -904,7 +887,8 @@ def partition_fx_graph_for_cpu_fallback(xla_model, xla_args, all_xla_args,
         node.replace_all_uses_with(new_node)
       partitioned_graph.graph.erase_node(node)
 
-  XLAConstructorMoverPass()(partitioned_graph.graph, move_xla_to_cuda=True)
+  if config.outside_on_cuda:
+    XLAConstructorMoverPass()(partitioned_graph.graph, move_xla_to_cuda=True)
   partitioned_graph.recompile()
 
   return partitioned_graph
