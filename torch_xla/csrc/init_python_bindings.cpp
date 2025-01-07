@@ -706,7 +706,8 @@ runtime::ComputationClient::ComputationPtr CreateComputation(
 runtime::ComputationClient::ComputationPtr XlaCreateComputation(
     const std::string& name, const std::vector<at::Tensor>& tensors) {
   // TODO: check want_all here, _xla_warm_up_cache uses false
-  std::vector<XLATensorPtr> xtensors = GetXlaTensors(tensors, /*want_all=*/false);
+  std::vector<XLATensorPtr> xtensors =
+      GetXlaTensors(tensors, /*want_all=*/false);
   return XLAGraphExecutor::Get()->CreateComputation(name, &xtensors);
 }
 
@@ -716,9 +717,12 @@ std::vector<at::Tensor> XlaCallComputation(
     const std::vector<at::Tensor>& orig_inputs,
     absl::flat_hash_map<int, int> arg_index_to_update_output_index) {
   std::vector<XLATensorPtr> xinputs = GetXlaTensors(inputs, /*want_all=*/true);
-  std::vector<XLATensorPtr> xoriginputs = GetXlaTensors(orig_inputs, /*want_all=*/true);
+  std::vector<XLATensorPtr> xoriginputs =
+      GetXlaTensors(orig_inputs, /*want_all=*/true);
   std::vector<XLATensorPtr> xresults =
-      tensor_methods::user_computation_with_update_(opname, xinputs, std::move(computation), xoriginputs, arg_index_to_update_output_index);
+      tensor_methods::user_computation_with_update_(
+          opname, xinputs, std::move(computation), xoriginputs,
+          arg_index_to_update_output_index);
   std::vector<at::Tensor> results;
   for (auto& xresult : xresults) {
     at::Tensor tensor = bridge::AtenFromXlaTensor(std::move(xresult));
@@ -1161,7 +1165,8 @@ void InitXlaModuleBindings(py::module m) {
           }
           {
             NoGilSection nogil;
-            results = XlaCallComputation(opname, inputs, computation, orig_inputs, map);
+            results = XlaCallComputation(opname, inputs, computation,
+                                         orig_inputs, map);
           }
           return results;
         });

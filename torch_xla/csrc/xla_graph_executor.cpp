@@ -121,9 +121,9 @@ std::vector<XLATensorPtr> XLAGraphExecutor::DeviceContextArena::GetLiveTensors(
     for (auto& uid_wptr : devctx->tensors_data) {
       auto data =
           std::dynamic_pointer_cast<XLATensor::Data>(uid_wptr.second.lock());
-      if (data != nullptr && (data->handle == nullptr ||
-         (data->view != nullptr &&
-          !data->view->IsUpToDate()))) {
+      if (data != nullptr &&
+          (data->handle == nullptr ||
+           (data->view != nullptr && !data->view->IsUpToDate()))) {
         tensors.push_back(XLATensor::Create(std::move(data)));
       }
     }
@@ -384,7 +384,7 @@ runtime::ComputationClient::ComputationPtr XLAGraphExecutor::CreateComputation(
   SyncTensorsConfig config;
   config.sync_ltc_data = false;
   config.force_ltc_data = false;
-  
+
   SyncTensorCollection coll = CollectSyncTensors(*tensors, config);
   XLA_CHECK(!coll.indices.empty());
 
@@ -407,7 +407,6 @@ runtime::ComputationClient::ComputationPtr XLAGraphExecutor::CreateComputation(
   return std::make_shared<runtime::ComputationClient::Computation>(
       name, std::move(computation));
 }
-
 
 void XLAGraphExecutor::SyncTensorsGraph(std::vector<XLATensorPtr>* tensors,
                                         absl::Span<const std::string> devices,
