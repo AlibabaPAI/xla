@@ -257,12 +257,12 @@ class SpecialReturnHandler:
 
     # dedup the traced outputs first
     self.deduper = Deduper()
-    self.deduped_trace_outputs = self.deduper.dedup(trace_outputs)
+    deduped_trace_outputs = self.deduper.dedup(trace_outputs)
 
     # record the output that is also a input
     trace_inputs_id2pos = {id(x): pos for pos, x in enumerate(trace_inputs)}
     self.trace_outputs_pos_to_inputs_pos = []
-    for out_pos, out in enumerate(self.deduped_trace_outputs):
+    for out_pos, out in enumerate(deduped_trace_outputs):
       in_pos = trace_inputs_id2pos.get(id(out), None)
       if in_pos is not None and not trace_inputs_inplace_update_bool[in_pos]:
         self.trace_outputs_pos_to_inputs_pos.append((out_pos, in_pos))
@@ -505,7 +505,7 @@ def extract_graph_helper(xla_model: torch.fx.GraphModule,
   vars_to_return = (xla_args_sharding_spec, len(args_and_out), graph_hash,
                     arg_index_to_need_update_index, none_remover,
                     graph_input_matcher, special_return_handler,
-                    xla_args_need_update, xla_args_dtype, xla_computation,
+                    len(xla_args_need_update), xla_args_dtype, xla_computation,
                     arg_index_to_update_output_index)
   # populate the cache
   sym_constants_to_graph_vars[sym_constants] = vars_to_return
@@ -538,7 +538,7 @@ def extract_internal(xla_model: torch.fx.GraphModule):
 
   (xla_args_sharding_spec, len_args_and_out, graph_hash,
    arg_index_to_need_update_index, none_remover, graph_input_matcher,
-   special_return_handler, xla_args_need_update, xla_args_dtype,
+   special_return_handler, len_xla_args_need_update, xla_args_dtype,
    xla_computation, arg_index_to_update_output_index) = extract_graph_helper(
        xla_model, sym_constants_to_graph_vars)
   skip_checking_input_sharding_threashold = xu.getenv_as(
@@ -565,14 +565,14 @@ def extract_internal(xla_model: torch.fx.GraphModule):
     if sym_constants in sym_constants_to_graph_vars:
       (xla_args_sharding_spec, len_args_and_out, graph_hash,
        arg_index_to_need_update_index, none_remover, graph_input_matcher,
-       special_return_handler, xla_args_need_update, xla_args_dtype,
+       special_return_handler, len_xla_args_need_update, xla_args_dtype,
        xla_computation, arg_index_to_update_output_index
       ) = sym_constants_to_graph_vars[sym_constants]
     else:
       xla_model.xla_args = args
       (xla_args_sharding_spec, len_args_and_out, graph_hash,
        arg_index_to_need_update_index, none_remover, graph_input_matcher,
-       special_return_handler, xla_args_need_update, xla_args_dtype,
+       special_return_handler, len_xla_args_need_update, xla_args_dtype,
        xla_computation,
        arg_index_to_update_output_index) = extract_graph_helper(
            xla_model, sym_constants_to_graph_vars)
@@ -619,7 +619,7 @@ def extract_internal(xla_model: torch.fx.GraphModule):
           xla_model.xla_args = args
           (xla_args_sharding_spec, args_and_out_copy, graph_hash,
            arg_index_to_need_update_index, none_remover, graph_input_matcher,
-           special_return_handler, xla_args_need_update) = extract_graph_helper(
+           special_return_handler, len_xla_args_need_update) = extract_graph_helper(
                xla_model, sym_constants_to_graph_vars)
           skip_checking_input_sharding_threashold = xu.getenv_as(
               'XLA_DYNAMO_INPUT_SHARDING_CHECK_THRESHOLD', int, 5)
@@ -655,7 +655,7 @@ def extract_internal(xla_model: torch.fx.GraphModule):
         torch._functionalize_sync(args[arg_index])
 
     # First few elements might be xla_args that needs to be in place updated
-    result = res[len(xla_args_need_update):]
+    result = res[len_xla_args_need_update:]
 
     none_remover.add_nones(result)
 
