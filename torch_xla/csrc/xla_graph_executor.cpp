@@ -121,7 +121,9 @@ std::vector<XLATensorPtr> XLAGraphExecutor::DeviceContextArena::GetLiveTensors(
     for (auto& uid_wptr : devctx->tensors_data) {
       auto data =
           std::dynamic_pointer_cast<XLATensor::Data>(uid_wptr.second.lock());
-      if (data != nullptr) {
+      if (data != nullptr &&
+          (data->handle == nullptr ||
+           (data->view != nullptr && !data->view->IsUpToDate()))) {
         tensors.push_back(XLATensor::Create(std::move(data)));
       }
     }
@@ -371,6 +373,39 @@ std::string XLAGraphExecutor::DumpHloComputation(
 std::vector<XLATensorPtr> XLAGraphExecutor::GetLiveTensors(
     const torch::lazy::BackendDevice* device) {
   return DeviceContextArena::Get()->GetLiveTensors(device);
+}
+
+runtime::ComputationClient::ComputationPtr XLAGraphExecutor::CreateComputation(
+    const std::string& name, std::vector<XLATensorPtr>* tensors) {
+  TF_VLOG(4) << "Trying to create the computation of " << tensors->size()
+             << " tensor(s)";
+  tsl::profiler::TraceMe activity("CreateComputation",
+                                  tsl::profiler::TraceMeLevel::kInfo);
+  SyncTensorsConfig config;
+  config.sync_ltc_data = false;
+  config.force_ltc_data = false;
+
+  SyncTensorCollection coll = CollectSyncTensors(*tensors, config);
+  XLA_CHECK(!coll.indices.empty());
+
+  std::vector<torch::lazy::Value> ir_values;
+  std::vector<torch::lazy::BackendDataPtr> tensor_data_vec;
+  ExtractIRAndPrepareXlaData_(tensors, coll.config, coll.indices, ir_values,
+                              tensor_data_vec);
+  PostOrderData po_data = RunPostOrder(ir_values, &coll);
+
+  LoweringContext lowering_ctx("CreateComputation", coll.device,
+                               po_data.post_order,
+                               std::move(po_data.emission_map));
+  for (auto ir_value : ir_values) {
+    xla::XlaOp root = lowering_ctx.GetOutputOp(
+        torch::lazy::Output(ir_value.node.get(), ir_value.index));
+    lowering_ctx.AddResult(root);
+  }
+
+  xla::XlaComputation computation = ConsumeValue(lowering_ctx.BuildXla());
+  return std::make_shared<runtime::ComputationClient::Computation>(
+      name, std::move(computation));
 }
 
 void XLAGraphExecutor::SyncTensorsGraph(std::vector<XLATensorPtr>* tensors,

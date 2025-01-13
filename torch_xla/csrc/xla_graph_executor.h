@@ -114,6 +114,9 @@ class XLAGraphExecutor : public torch::lazy::LazyGraphExecutor {
   std::vector<XLATensorPtr> GetLiveTensors(
       const torch::lazy::BackendDevice* device);
 
+  runtime::ComputationClient::ComputationPtr CreateComputation(
+      const std::string& name, std::vector<XLATensorPtr>* tensors);
+
   // Applies all the pending IR operations queued over the input tensors. All
   // the tensors must be on the same device. If wait is true, the sync operation
   // will be run synchronously. The devices argument, if not empty, tells the

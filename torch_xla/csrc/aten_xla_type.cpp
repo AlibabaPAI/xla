@@ -3460,9 +3460,12 @@ at::Scalar XLANativeFunctions::_local_scalar_dense(const at::Tensor& self) {
   if (DebugUtil::ExperimentEnabled("early_sync")) {
     // sync tensors in order to save computation when step is marked later.
     XLATensorPtr self_tensor = bridge::GetXlaTensor(self);
-    XLAGraphExecutor::Get()->SyncLiveTensorsGraph(&self_tensor->GetDevice(),
+    auto device = self_tensor->GetDevice();
+    XLAGraphExecutor::Get()->SyncLiveTensorsGraph(&device,
                                                   /*devices=*/{},
-                                                  /*wait=*/true);
+                                                  /*wait=*/false);
+    XLAGraphExecutor::Get()->MarkStep(device, false);
+    SetAllReduceToken(device, nullptr);
     TORCH_LAZY_COUNTER("EarlySyncLiveTensorsCount", 1);
   }
   return at::native::call_fallback_fn<&xla_cpu_fallback,

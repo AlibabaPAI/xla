@@ -152,6 +152,12 @@ std::vector<XLATensorPtr> user_computation(
     const std::string& opname, absl::Span<const XLATensorPtr> inputs,
     runtime::ComputationClient::ComputationPtr computation);
 
+std::vector<XLATensorPtr> user_computation_with_update_(
+    const std::string& opname, absl::Span<const XLATensorPtr> inputs,
+    runtime::ComputationClient::ComputationPtr computation,
+    std::vector<XLATensorPtr>& orig_inputs,
+    absl::flat_hash_map<int, int>& arg_index_to_update_output_index);
+
 //////////////////////////////////////////////////////////////////////////////
 // Quantization related ops here.
 //////////////////////////////////////////////////////////////////////////////
