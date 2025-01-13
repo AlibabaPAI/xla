@@ -619,7 +619,8 @@ def extract_internal(xla_model: torch.fx.GraphModule):
           xla_model.xla_args = args
           (xla_args_sharding_spec, args_and_out_copy, graph_hash,
            arg_index_to_need_update_index, none_remover, graph_input_matcher,
-           special_return_handler, len_xla_args_need_update) = extract_graph_helper(
+           special_return_handler,
+           len_xla_args_need_update) = extract_graph_helper(
                xla_model, sym_constants_to_graph_vars)
           skip_checking_input_sharding_threashold = xu.getenv_as(
               'XLA_DYNAMO_INPUT_SHARDING_CHECK_THRESHOLD', int, 5)
