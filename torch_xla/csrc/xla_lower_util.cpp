@@ -1280,6 +1280,32 @@ xla::XlaOp BuildTpuCustomCall(const std::vector<xla::XlaOp>& inputs,
                                    payload);
 }
 
+std::vector<xla::XlaOp> BuildCudaCustomCall(
+    const std::vector<xla::XlaOp>& inputs, int num_outputs,
+    const xla::Shape& output_shape, const std::string& call_target_name,
+    const std::string& opaque) {
+  std::vector<xla::Shape> input_shapes;
+  input_shapes.reserve(inputs.size());
+  for (const auto& input : inputs) {
+    xla::Shape shape = ShapeHelper::ShapeOfXlaOp(input);
+    input_shapes.push_back(shape);
+  }
+
+  XLA_CHECK(inputs.size() > 0) << "inputs are empty";
+  auto result =
+      xla::CustomCallWithLayout(inputs[0].builder(), call_target_name, inputs,
+                                output_shape, input_shapes, opaque);
+  std::vector<xla::XlaOp> results;
+  if (num_outputs > 1) {
+    for (int i = 0; i < num_outputs; ++i) {
+      results.push_back(xla::GetTupleElement(result, i));
+    }
+  } else {
+    results.push_back(result);
+  }
+  return results;
+}
+
 xla::XlaOp BuildDynamicArange(const xla::XlaOp& size, const xla::XlaOp& start,
                               const xla::XlaOp& step,
                               xla::PrimitiveType scalar_type,

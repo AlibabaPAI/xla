@@ -64,6 +64,7 @@ ptxla_cc_library(
         "token_handler.cpp",
         "torch_util.cpp",
         "view.cpp",
+        "vllm_fp8.cpp",
         "xla_backend_impl.cpp",
         "xla_graph_executor.cpp",
         "xla_lower_util.cpp",

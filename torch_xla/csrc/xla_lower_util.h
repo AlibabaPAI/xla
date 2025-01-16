@@ -157,6 +157,11 @@ xla::XlaOp BuildTpuCustomCall(const std::vector<xla::XlaOp>& inputs,
                               const xla::Shape& output_shape,
                               const std::string& payload);
 
+std::vector<xla::XlaOp> BuildCudaCustomCall(
+    const std::vector<xla::XlaOp>& inputs, int num_outputs,
+    const xla::Shape& output_shape, const std::string& call_target_name,
+    const std::string& opaque);
+
 xla::XlaOp BuildDynamicArange(const xla::XlaOp& size, const xla::XlaOp& start,
                               const xla::XlaOp& step,
                               xla::PrimitiveType scalar_type,

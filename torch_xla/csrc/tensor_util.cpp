@@ -63,6 +63,13 @@ struct Caster<tsl::bfloat16> {
   }
 };
 template <>
+struct Caster<tsl::float8_e4m3fn> {
+  template <typename D>
+  D cast(const tsl::float8_e4m3fn& value) const {
+    return static_cast<D>(static_cast<float>(value));
+  }
+};
+template <>
 struct Caster<at::Half> {
   template <typename D>
   D cast(const at::Half& value) const {
@@ -181,6 +188,10 @@ struct NeedCast<tsl::bfloat16> {
   static constexpr bool value = true;
 };
 template <>
+struct NeedCast<tsl::float8_e4m3fn> {
+  static constexpr bool value = true;
+};
+template <>
 struct NeedCast<at::BFloat16> {
   static constexpr bool value = true;
 };
@@ -247,6 +258,12 @@ void CopyData<tsl::bfloat16, at::BFloat16>(tsl::bfloat16* dest,
                                            const at::BFloat16* source,
                                            int64_t n, const CopyCasted&) {
   CheckedMemcpy<tsl::bfloat16, at::BFloat16>(dest, source, n);
+}
+template <>
+void CopyData<tsl::float8_e4m3fn, at::Float8_e4m3fn>(
+    tsl::float8_e4m3fn* dest, const at::Float8_e4m3fn* source, int64_t n,
+    const CopyCasted&) {
+  CheckedMemcpy<tsl::float8_e4m3fn, at::Float8_e4m3fn>(dest, source, n);
 }
 
 std::vector<int64_t> GetIterationDimensions(const xla::Shape& shape) {
@@ -537,6 +554,9 @@ at::Tensor XlaLiteralToTensorHelper(const xla::Literal& literal,
     case at::ScalarType::ComplexDouble:
       return XlaLiteralToTensor<SType, c10::complex<double>>(literal,
                                                              dest_element_type);
+    case at::ScalarType::Float8_e4m3fn:
+      return XlaLiteralToTensor<SType, at::Float8_e4m3fn>(literal,
+                                                          dest_element_type);
     default:
       XLA_ERROR() << "Unsupported scalar type: " << dest_element_type;
   }
@@ -648,6 +668,9 @@ at::Tensor MakeTensorFromXlaLiteral(const xla::Literal& literal,
     case xla::PrimitiveType::C128:
       return XlaLiteralToTensorHelper<xla::complex128>(literal,
                                                        dest_element_type);
+    case xla::PrimitiveType::F8E4M3FN:
+      return XlaLiteralToTensorHelper<tsl::float8_e4m3fn>(literal,
+                                                          dest_element_type);
     default:
       XLA_ERROR() << "Unsupported literal type: " << literal.shape();
   }
