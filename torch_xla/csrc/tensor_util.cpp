@@ -63,6 +63,13 @@ struct Caster<tsl::bfloat16> {
   }
 };
 template <>
+struct Caster<at::Float8_e4m3fn> {
+  template <typename D>
+  D cast(const at::Float8_e4m3fn& value) const {
+    return static_cast<D>(static_cast<float>(value));
+  }
+};
+template <>
 struct Caster<tsl::float8_e4m3fn> {
   template <typename D>
   D cast(const tsl::float8_e4m3fn& value) const {
@@ -191,6 +198,11 @@ template <>
 struct NeedCast<tsl::float8_e4m3fn> {
   static constexpr bool value = true;
 };
+
+template <>
+struct NeedCast<at::Float8_e4m3fn> {
+  static constexpr bool value = true;
+};
 template <>
 struct NeedCast<at::BFloat16> {
   static constexpr bool value = true;
@@ -258,6 +270,12 @@ void CopyData<tsl::bfloat16, at::BFloat16>(tsl::bfloat16* dest,
                                            const at::BFloat16* source,
                                            int64_t n, const CopyCasted&) {
   CheckedMemcpy<tsl::bfloat16, at::BFloat16>(dest, source, n);
+}
+template <>
+void CopyData<at::Float8_e4m3fn, tsl::float8_e4m3fn>(
+    at::Float8_e4m3fn* dest, const tsl::float8_e4m3fn* source, int64_t n,
+    const CopyCasted&) {
+  CheckedMemcpy<at::Float8_e4m3fn, tsl::float8_e4m3fn>(dest, source, n);
 }
 template <>
 void CopyData<tsl::float8_e4m3fn, at::Float8_e4m3fn>(
@@ -475,6 +493,10 @@ void TensorToBufferSType(const at::Tensor& tensor, const xla::Shape& dest_shape,
       TensorToBuffer<SType, xla::complex128>(tensor, dest_shape, dest_buffer,
                                              dest_buffer_size, device);
       break;
+    case xla::PrimitiveType::F8E4M3FN:
+      TensorToBuffer<SType, tsl::float8_e4m3fn>(tensor, dest_shape, dest_buffer,
+                                                dest_buffer_size, device);
+      break;
     default:
       XLA_ERROR() << "Destination shape type not supported: " << dest_shape;
   }
@@ -616,6 +638,10 @@ void PopulateTensorBuffer(const at::Tensor& tensor,
     case at::ScalarType::ComplexDouble:
       TensorToBufferSType<c10::complex<double>>(tensor, dest_shape, dest_buffer,
                                                 dest_buffer_size, device);
+      break;
+    case at::ScalarType::Float8_e4m3fn:
+      TensorToBufferSType<at::Float8_e4m3fn>(tensor, dest_shape, dest_buffer,
+                                             dest_buffer_size, device);
       break;
     default:
       XLA_ERROR() << "Tensor type not supported: " << tensor.type();
