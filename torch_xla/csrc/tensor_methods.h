@@ -90,6 +90,11 @@ void tpu_custom_call_(XLATensorPtr& output,
                       const std::vector<XLATensorPtr>& inputs,
                       const std::string& payload);
 
+std::vector<XLATensorPtr> cuda_custom_call(
+    const std::vector<XLATensorPtr>& inputs, int num_outputs,
+    const xla::Shape& output_shape, const std::string& call_target_name,
+    const std::string& opaque);
+
 XLATensorPtr get_dimensions_size(const XLATensorPtr& input,
                                  std::vector<int64_t> dimensions);
 

@@ -38,6 +38,7 @@
 #include "torch_xla/csrc/ops/convolution_backward_overrideable.h"
 #include "torch_xla/csrc/ops/convolution_overrideable.h"
 #include "torch_xla/csrc/ops/count_nonzero.h"
+#include "torch_xla/csrc/ops/cuda_custom_call.h"
 #include "torch_xla/csrc/ops/cumprod.h"
 #include "torch_xla/csrc/ops/cumsum.h"
 #include "torch_xla/csrc/ops/dequant_tensor.h"
@@ -553,6 +554,19 @@ void tpu_custom_call_(XLATensorPtr& output,
   }
   output->SetInPlaceIrValue(torch::lazy::MakeNode<TpuCustomCall>(
       values, output->shape().get(), payload));
+}
+
+std::vector<XLATensorPtr> cuda_custom_call(
+    const std::vector<XLATensorPtr>& inputs, int num_outputs,
+    const xla::Shape& output_shape, const std::string& call_target_name,
+    const std::string& opaque) {
+  std::vector<torch::lazy::Value> values;
+  for (const auto& input : inputs) {
+    values.push_back(input->GetIrValue());
+  }
+  auto node = torch::lazy::MakeNode<CudaCustomCall>(
+      values, num_outputs, output_shape, call_target_name, opaque);
+  return inputs[0]->MakeOutputTensors(node, /*inherit_logical_type=*/false);
 }
 
 XLATensorPtr get_dimensions_size(const XLATensorPtr& input,
