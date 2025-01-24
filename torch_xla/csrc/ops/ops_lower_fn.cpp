@@ -753,7 +753,13 @@ torch_xla::XlaOpVector Sign::Lower(LoweringContext* loctx) const {
 
 torch_xla::XlaOpVector Silu::Lower(LoweringContext* loctx) const {
   xla::XlaOp xla_input = loctx->GetOutputOp(operand(0));
-  return ReturnOp(xla_input * BuildSigmoid(xla_input), loctx);
+  auto input_type = XlaHelpers::TypeOfXlaOp(xla_input);
+  xla::XlaOp fp32_input = ConvertTo(xla_input, input_type,    
+      xla::PrimitiveType::F32);
+  xla::XlaOp fp32_out = fp32_input * BuildSigmoid(fp32_input);
+  xla::XlaOp xla_out = ConvertTo(fp32_out, XlaHelpers::TypeOfXlaOp(fp32_out),
+                      input_type);
+  return ReturnOp(xla_out, loctx);
 }
 
 torch_xla::XlaOpVector SiluBackward::Lower(LoweringContext* loctx) const {

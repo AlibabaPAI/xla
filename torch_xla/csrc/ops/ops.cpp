@@ -184,7 +184,13 @@ torch::lazy::NodePtr SiLU(const torch::lazy::Value& input) {
   auto lower_fn = [](const XlaNode& node,
                      LoweringContext* loctx) -> XlaOpVector {
     xla::XlaOp xla_input = loctx->GetOutputOp(node.operand(0));
-    return node.ReturnOp(xla_input * BuildSigmoid(xla_input), loctx);
+    auto input_type = XlaHelpers::TypeOfXlaOp(xla_input);
+    xla::XlaOp fp32_input = ConvertTo(xla_input, input_type,    
+        xla::PrimitiveType::F32);
+    xla::XlaOp fp32_out = fp32_input * BuildSigmoid(fp32_input);
+    xla::XlaOp xla_out = ConvertTo(fp32_out, XlaHelpers::TypeOfXlaOp(fp32_out),
+                        input_type);
+    return node.ReturnOp(xla_out, loctx);
   };
   return GenericOp(torch::lazy::OpKind(at::aten::silu), {input},
                    GetXlaShape(input), std::move(lower_fn));

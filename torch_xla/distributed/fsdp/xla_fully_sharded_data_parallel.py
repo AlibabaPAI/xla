@@ -486,8 +486,17 @@ class XlaFullyShardedDataParallel(nn.Module):
             k, XlaFullyShardedDataParallel))
 
     if sync_module_states:
-      module = module.to(xm.xla_device())
+      # module = module.to(xm.xla_device())
+      self.broadcast_group = None
+      if sharding_groups is None:
+        sharding_groups = [list(range(xm.xrt_world_size()))]
+      for ranks in sharding_groups:
+        group = torch.distributed.new_group(ranks, backend="gloo")
+        if xm.get_ordinal() in ranks:
+          self.broadcast_group = group
       self._sync_module_states_(module)
+      torch.distributed.destroy_process_group(self.broadcast_group)
+      self.broadcast_group = None
 
     # Only handle params which are not already sharded. This enables
     # sharding individual layers of a Module, with an outer wrapper to
@@ -674,11 +683,13 @@ class XlaFullyShardedDataParallel(nn.Module):
           continue
         # Since broadcast employs all-reduce, here we only need to ensure that root_ordinal
         # is different from xm.get_ordinal() on the non-root nodes
-        root_ordinal = xm.get_ordinal() if self.rank == 0 else -1
-        self.collective_broadcast_op(
-            parameters_and_buffers,
-            root_ordinal=root_ordinal,
-            groups=self.sharding_groups)
+        # root_ordinal = xm.get_ordinal() if self.rank == 0 else -1
+        # self.collective_broadcast_op(
+        #     parameters_and_buffers,
+        #     root_ordinal=root_ordinal,
+        #     groups=self.sharding_groups)
+        for t in parameters_and_buffers:
+          torch.distributed.broadcast(t, torch.distributed.get_global_rank(self.broadcast_group, 0), group = self.broadcast_group)
 
   @torch.no_grad()
   def _shard_parameters_(self, params_to_shard) -> None:
@@ -979,7 +990,7 @@ class XlaFullyShardedDataParallel(nn.Module):
     # Start of a forward pass.
     self.training_state = TrainingState.FORWARD
 
-    if self.compute_dtype != torch.float32:
+    if self.compute_dtype != torch.float32 and self._is_root:
       # Cast the input float tensors to the specified compute_dtype
       args, kwargs = _cast_floats_tensors(self.compute_dtype, *args, **kwargs)
 
