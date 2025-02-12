@@ -9,8 +9,11 @@ import torch_xla.utils.utils as xu
 def to_dlpack(xla_tensor: Any):
   return torch_xla._XLAC._to_dlpack(xla_tensor)
 
+
 def to_dlpack_alias(xla_tensor_input: Any, xla_tensor_result, data_pointer):
-  return torch_xla._XLAC._to_dlpack_alias(xla_tensor_input, xla_tensor_result, data_pointer)
+  return torch_xla._XLAC._to_dlpack_alias(xla_tensor_input, xla_tensor_result,
+                                          data_pointer)
+
 
 def from_dlpack(ext_tensor: Any):
   if hasattr(ext_tensor, '__dlpack_device__') and hasattr(
@@ -79,4 +82,3 @@ def from_xla_cuda_to_cuda_alias(input_tensor, result_tensor, data_pointer):
   dlpack = to_dlpack_alias(input_tensor, result_tensor, data_pointer)
   cuda_tensor = torch.utils.dlpack.from_dlpack(dlpack)
   return cuda_tensor
-  

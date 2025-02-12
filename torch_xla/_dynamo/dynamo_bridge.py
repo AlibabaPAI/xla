@@ -363,7 +363,7 @@ def extract_graph_helper(xla_model: torch.fx.GraphModule,
   # FX Graph inputs passed from Dynamo. xla_args are XLA Tensors.
   xla_args = xla_model.xla_args
   xla_args_to_run = xla_args
-  
+
   if config.no_xla_graph_sync:
     xla_args = list(xla_args)
     for output in alias_output:
@@ -428,7 +428,7 @@ def extract_graph_helper(xla_model: torch.fx.GraphModule,
   xla_out = xla_model(*xla_args_to_run)
   if not isinstance(xla_out, (tuple, list)):
     xla_out = (xla_out,)
-  
+
   if config.no_xla_graph_sync:
     # make the inputs we add stay in the xla graph;
     for idx, out in enumerate(xla_out):
@@ -443,7 +443,7 @@ def extract_graph_helper(xla_model: torch.fx.GraphModule,
     xla_out_ids = {id(x) for x in (tuple(xla_out) + tuple(alias_output))}
   else:
     xla_out_ids = {id(x) for x in tuple(xla_out)}
-    
+
   none_remover = NoneRemover()
   none_remover.remove_nones(xla_out)
   if config.no_xla_graph_sync:
@@ -462,7 +462,7 @@ def extract_graph_helper(xla_model: torch.fx.GraphModule,
       arg_index_to_need_update_index[index] = len(xla_args_need_update)
       arg_index_to_update_output_index[i] = len(xla_args_need_update)
       xla_args_need_update.append(tensor)
-  
+
   if config.no_xla_graph_sync:
     args_and_out = tuple(xla_args_need_update) + tuple(alias_output)
   else:
@@ -606,7 +606,7 @@ def extract_internal(xla_model: torch.fx.GraphModule):
     nonlocal skip_checking_input_sharding_threashold
     nonlocal sym_constants_to_graph_vars
     nonlocal graph_hash
-s
+
     original_device: torch.device = _get_input_arg_device(args)
     is_cuda_args: bool = False
     if original_device:
@@ -627,12 +627,10 @@ s
           # scalar tensor
           if len(shape) == 0:
             alias_output.append(
-                torch.zeros(
-                    shape, dtype=dtype, device=original_device))
+                torch.zeros(shape, dtype=dtype, device=original_device))
           else:
             alias_output.append(
-                torch.empty(
-                    tuple(shape), dtype=dtype, device=original_device))
+                torch.empty(tuple(shape), dtype=dtype, device=original_device))
 
       for idx, out in enumerate(alias_output):
         args.append(out)
@@ -744,13 +742,13 @@ s
       for arg_index, res_index in arg_index_to_need_update_index.items():
         args[arg_index].copy_(res[res_index])
         torch._functionalize_sync(args[arg_index])
-    
+
     # First few elements might be xla_args that needs to be in place updated
     if config.no_xla_graph_sync:
       result = res[(len_xla_args_need_update - len(alias_output)):]
     else:
       result = res[len_xla_args_need_update:]
-    
+
     none_remover.add_nones(result)
 
     if is_cuda_args:
@@ -759,22 +757,22 @@ s
         for idx, arg in enumerate(xla_args_tensor_only):
           tensor_id_map[id(arg)] = idx
         # get the graph input idx aliased with each graph output
-        input_aliased_id = torch_xla._XLAC._get_alias_info(graph_hash,
-                                                          len(graph_input),
-                                                          len(alias_output))
+        input_aliased_id = torch_xla._XLAC._get_alias_info(
+            graph_hash, len(graph_input), len(alias_output))
         data_pointer_to_dlpack = []
         # the correct order of input address to dlpack
         for i in input_aliased_id:
           data_pointer_to_dlpack.append(data_pointer[tensor_id_map[id(
               graph_input[i])]])
-        
+
         # wait until the xla graph finish kernel launch.
         torch_xla._XLAC._block_until_launch()
         result = _move_tensors_to_cuda_device(
-            tuple(args[-len(alias_output):]), tuple(result), data_pointer_to_dlpack)
+            tuple(args[-len(alias_output):]), tuple(result),
+            data_pointer_to_dlpack)
       else:
         result = _maybe_move_tensors_to_device(tuple(result), original_device)
-        
+
     if len(result) == 1:
       return result[0]
     else:
@@ -865,7 +863,7 @@ class InputCollector(torch.fx.Interpreter):
       for out in xla_out:
         xla_out_dtype.append(out.dtype)
         xla_out_shape.append(out.shape)
-      
+
       if "fused_" in target:
         submod.xla_out_dtype = xla_out_dtype
         submod.xla_out_shape = xla_out_shape
