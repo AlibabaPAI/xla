@@ -680,6 +680,19 @@ torch::lazy::hash_t PjRtComputationClient::HashCompilationEnv() {
   return comp_env_hash_;
 }
 
+std::vector<int64_t> PjRtComputationClient::GetAliasInfo(
+    const runtime::ComputationClient::ComputationPtr computation,
+    int64_t input_num, int64_t output_num) {
+  const PjRtComputation& pjrt_computation =
+      dynamic_cast<const PjRtComputation&>(
+          *std::dynamic_pointer_cast<runtime::ComputationClient::Computation>(
+              computation));
+
+  return pjrt_computation.executable
+      ->GetAliasedParams(0 /*executable_idx*/, input_num, output_num)
+      .value();
+}
+
 std::vector<ComputationClient::DataPtr>
 PjRtComputationClient::ExecuteComputation(
     const ComputationClient::Computation& computation,

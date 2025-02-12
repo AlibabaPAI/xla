@@ -75,6 +75,10 @@ class PjRtComputationClient : public ComputationClient {
 
   ComputationPtr DeserializeComputation(const std::string& serialized) override;
 
+  std::vector<int64_t> GetAliasInfo(
+      const runtime::ComputationClient::ComputationPtr computation,
+      int64_t input_num, int64_t output_num) override;
+
   std::vector<DataPtr> ExecuteComputation(
       const Computation& computation, absl::Span<const DataPtr> arguments,
       const std::string& device,
@@ -110,9 +114,26 @@ class PjRtComputationClient : public ComputationClient {
             xla::PjRtLocalDeviceId(local_device_id));
     XLA_CHECK(pjrt_device.ok()) << "Failed to get a PjRt device.";
     absl::StatusOr<std::intptr_t> stream =
-        pjrt_device.value()->GetStreamForExternalReadyEvents();
+        pjrt_device.value()->GetLocalComputeStream();
     XLA_CHECK(stream.ok()) << "Failed to get a stream.";
     return stream.value();
+  }
+
+  void SetCudaStreamForDevice(std::intptr_t stream,
+                              int local_device_id) const override {
+    absl::StatusOr<xla::PjRtDevice*> pjrt_device =
+        client_->LookupAddressableDevice(
+            xla::PjRtLocalDeviceId(local_device_id));
+    XLA_CHECK(pjrt_device.ok()) << "Failed to get a PjRt device.";
+    absl::Status status = pjrt_device.value()->SetLocalComputeStream(stream);
+    XLA_CHECK(status.ok()) << "Failed to set a stream.";
+  }
+
+  void WaitCudaStreamForDevice(
+      const torch::lazy::BackendDevice& device) override {
+    xla::PjRtDevice* pjrt_device = StringToPjRtDevice(device.toString());
+    absl::Status block_status = pjrt_device->WaitLocalComputeStream();
+    XLA_CHECK(block_status.ok()) << "Failed to wait a compute stream";
   }
 
   std::vector<std::string> GetLocalDevices() const override;

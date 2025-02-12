@@ -265,6 +265,9 @@ class ComputationClient {
       std::string device, xla::Shape shape,
       std::optional<xla::OpSharding> sharding = std::nullopt) = 0;
 
+  virtual std::vector<int64_t> GetAliasInfo(
+      const runtime::ComputationClient::ComputationPtr computation,
+      int64_t input_num, int64_t output_num) = 0;
   // Returns data shards. We expect this to be called on PjRtShardedData to
   // retrieve the shards. If other data type is passed, it returns the input
   // wrapped inside a vector.
@@ -363,6 +366,12 @@ class ComputationClient {
       int local_device_id) const = 0;
 
   virtual std::intptr_t GetCudaStreamForDevice(int local_device_id) const = 0;
+
+  virtual void SetCudaStreamForDevice(std::intptr_t stream,
+                                      int local_device_id) const = 0;
+
+  virtual void WaitCudaStreamForDevice(
+      const torch::lazy::BackendDevice& device) = 0;
 
   virtual size_t GetNumDevices() const = 0;
 

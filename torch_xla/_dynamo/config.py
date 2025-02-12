@@ -16,3 +16,6 @@ outside_on_cuda = False
 
 # Whether to mark step after each layer when early_sync happens.
 mark_step_after_layer_if_early_sync = False
+
+# whether to remove the sync of xla run_cached_graph in dynamo + xla backend.
+no_xla_graph_sync = False
