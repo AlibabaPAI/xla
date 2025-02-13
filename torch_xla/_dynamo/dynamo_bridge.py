@@ -192,6 +192,13 @@ def _move_tensors_to_cuda_device(input_tensors: tuple, result_tensors: tuple,
   moved_tensors = []
   for (input_tensor, result_tensor,
        data_pointer) in zip(input_tensors, result_tensors, data_pointers):
+    if result_tensor.device.type == 'cuda':
+      moved_tensors.append(result_tensor)
+      continue
+
+    if dynamo_debug:
+      print("moving xla tensor to cuda tensor before xla graph sync.")
+
     moved_tensor = torch_xla_dlpack.from_xla_cuda_to_cuda_alias(
         input_tensor, result_tensor, data_pointer)
     moved_tensor.requires_grad = result_tensor.requires_grad
@@ -347,7 +354,7 @@ def extract_graph_helper(xla_model: torch.fx.GraphModule,
                                                                  ...],
                                                            Tuple[Any, ...]]):
   if config.no_xla_graph_sync:
-    # add inputs with same shape and dtype as the output of fx_graph.
+    # add inputs with same shape and dtype as the outputs of fx_graph.
     fx_output_dtype = xla_model.xla_out_dtype
     fx_output_shape = xla_model.xla_out_shape
     alias_output = []
@@ -368,7 +375,8 @@ def extract_graph_helper(xla_model: torch.fx.GraphModule,
     xla_args = list(xla_args)
     for output in alias_output:
       xla_args.append(output)
-
+    
+    # donate alias_output as input with output manully.
     for tensor in alias_output:
       torch_xla._XLAC._set_buffer_donation(tensor, True)
     torch_xla._XLAC._xla_optimization_barrier_(alias_output)
