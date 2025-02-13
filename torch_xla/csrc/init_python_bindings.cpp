@@ -1315,6 +1315,12 @@ void InitXlaModuleBindings(py::module m) {
   m.def("_get_stream_for_cuda_device", [](const int device_id) {
     return runtime::GetComputationClient()->GetCudaStreamForDevice(device_id);
   });
+  // currently we cannot set stream allocated outside xla by streamid;
+  m.def("_set_stream_from_cuda_device",
+        [](const std::intptr_t stream, const int device_id) {
+          return runtime::GetComputationClient()->SetCudaStreamForDevice(
+              stream, device_id);
+        });
   m.def("_xla_num_devices", []() -> int64_t {
     if (UseVirtualDevice()) {
       return 1;
@@ -2498,6 +2504,21 @@ void InitXlaModuleBindings(py::module m) {
     return false;
   });
 
+  m.def("_get_alias_info",
+        [](const std::string& hash_str, int64_t input_num,
+           int64_t output_num) -> std::vector<int64_t> {
+          XLA_CHECK(hash_str.size() == sizeof(torch::lazy::hash_t));
+          torch::lazy::hash_t hash = *(torch::lazy::hash_t*)(hash_str.c_str());
+
+          auto aliasedparams = XLAGraphExecutor::Get()->GetAliasInfo(
+              hash, input_num, output_num);
+          return aliasedparams;
+        });
+
+  m.def("_block_until_launch", []() -> void {
+    XLAGraphExecutor::LaunchLocker::Get()->WaitUntilCanLock();
+  });
+
   // -------------FlashAttention Integration API Start-----------------
   m.def("_flash_attention_forward",
         [](const at::Tensor& q, const at::Tensor& k, const at::Tensor& v,
@@ -2705,6 +2726,18 @@ void InitXlaModuleBindings(py::module m) {
     }
     return PyCapsule_New(dlMTensor, "dltensor", dlPack_Capsule_Destructor);
   });
+
+  m.def("_to_dlpack_alias",
+        [](const at::Tensor& input, const at::Tensor& result,
+           int64_t data_pointer) -> py::handle {
+          DLManagedTensor* dlMTensor;
+          {
+            NoGilSection nogil;
+            dlMTensor = torch_xla::toDLPackAlias(input, result, data_pointer);
+          }
+          return PyCapsule_New(dlMTensor, "dltensor",
+                               dlPack_Capsule_Destructor);
+        });
 
   // from a dlpack PyCapsule to an XLA tensor
   // If ext_data is the result of an CUDA computation, we should synchronize

@@ -10,6 +10,11 @@ def to_dlpack(xla_tensor: Any):
   return torch_xla._XLAC._to_dlpack(xla_tensor)
 
 
+def to_dlpack_alias(xla_tensor_input: Any, xla_tensor_result, data_pointer):
+  return torch_xla._XLAC._to_dlpack_alias(xla_tensor_input, xla_tensor_result,
+                                          data_pointer)
+
+
 def from_dlpack(ext_tensor: Any):
   if hasattr(ext_tensor, '__dlpack_device__') and hasattr(
       ext_tensor, '__dlpack__'):
@@ -48,5 +53,32 @@ def from_xla_cuda_to_cuda(tensor):
     event.record(current_stream)
     external_stream.wait_event(event)
   dlpack = to_dlpack(tensor)
+  cuda_tensor = torch.utils.dlpack.from_dlpack(dlpack)
+  return cuda_tensor
+
+
+def from_xla_cuda_to_cuda_alias(input_tensor, result_tensor, data_pointer):
+  assert torch.cuda.is_available()
+  assert result_tensor.device.type == "xla", "The tensor is not an XLA tensor"
+  is_xla_cuda = True if xu.getenv_as("PJRT_DEVICE", str,
+                                     "").lower() == "cuda" else False
+  assert is_xla_cuda, "The XLA tensor is not on CUDA"
+  # consumer is torch, producer is torch_xla
+
+  # Similar logic as torch.utils.dlpack.from_dlpack
+  # https://github.com/pytorch/pytorch/blob/b0ef363972203b163cddc95e4c6054b8221c2300/torch/utils/dlpack.py#L114-L115
+  # The array API specify that the default legacy stream must be passed
+  # with a value of 1 for CUDA
+  device_id = result_tensor.device.index
+  stream = torch_xla._XLAC._get_stream_for_cuda_device(device_id)
+  stream = 1 if stream == 0 else stream
+  assert stream is None or type(stream) is int
+  external_stream = torch.cuda.ExternalStream(stream)
+  current_stream = torch.cuda.current_stream()
+  if external_stream != current_stream:
+    event = torch.cuda.Event()
+    event.record(current_stream)
+    external_stream.wait_event(event)
+  dlpack = to_dlpack_alias(input_tensor, result_tensor, data_pointer)
   cuda_tensor = torch.utils.dlpack.from_dlpack(dlpack)
   return cuda_tensor
